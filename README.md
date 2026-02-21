@@ -100,14 +100,14 @@ A standalone test lives in `EpaperMinTest/`:
 
 ```
 UniBuddy/
-├── UniBuddy.ino      Main loop & state machine (Idle/Pomodoro/Break/Nudge/Stats)
-├── config.h           Pin assignments, timing constants, TEST_MODE toggle
-├── input.h            Button debounce & shake sensor reading
-├── pomodoro.h         Focus & break countdown timers
-├── behaviour.h        Session counter & streak persistence (EEPROM)
-├── pet.h              Pet mood enum, pixel-art bitmaps, animation tick
-├── epaper.h           E-paper landscape rendering (full/partial refresh)
-├── servo_arm.h        Servo nudge sequence (with stub fallback)
+├── UniBuddy.ino      Main loop & state machine (setup/loop/mode switch)
+├── config.h           Shared pins, timing, AppMode enum, compile toggles
+├── input.h            Button debounce (short/long press) & shake sensor
+├── pomodoro.h         Focus & break countdown timers (auto long-break)
+├── behaviour.h        Session counter & streak persistence (EEPROM / RAM)
+├── pet.h              Pet mood enum, 16×16 PROGMEM sprites, blink animation
+├── epaper.h           E-paper UI renderer (full / partial refresh, 5 screens)
+├── servo_arm.h        SG90 nudge wave animation (7-step keyframe)
 ├── epd2in13_V4.*      Waveshare e-paper driver (bundled)
 ├── epdpaint.*         Paint class (Draw*, rotation, framebuffer)
 ├── epdif.*            SPI hardware abstraction

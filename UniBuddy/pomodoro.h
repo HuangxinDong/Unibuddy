@@ -1,17 +1,31 @@
 #pragma once
+/*
+ * ────────────────────────────────────────────────────────────
+ *  pomodoro.h — Focus & break countdown timers
+ *
+ *  Call flow:  initPomodoro → startPomodoro → updatePomodoro
+ *              → isPomodoroFinished → startBreak → tickBreakTimer
+ *              → isBreakFinished  (loop)
+ *
+ *  Long break triggers every 4th completed cycle.
+ * ────────────────────────────────────────────────────────────
+ */
 #include <Arduino.h>
 #include "config.h"
 
-static uint32_t _pomStart    = 0;
-static uint32_t _pomDuration = POMODORO_DURATION;
-static bool     _pomRunning  = false;
-static bool     _pomFinished = false;
+// ── Internal state ──────────────────────────────────────────
+static uint32_t _pomStart      = 0;
+static uint32_t _pomDuration   = POMODORO_DURATION;
+static bool     _pomRunning    = false;
+static bool     _pomFinished   = false;
 
 static uint32_t _breakStart    = 0;
 static uint32_t _breakDuration = SHORT_BREAK;
 static bool     _breakFinished = false;
 
 static uint8_t  _completedCycles = 0;
+
+// ── Focus timer ─────────────────────────────────────────────
 
 void initPomodoro() {
   _pomRunning  = false;
@@ -75,4 +89,5 @@ uint32_t breakSecondsLeft() {
   return (_breakDuration - elapsed) / 1000;
 }
 
+// ── Getters ─────────────────────────────────────────────────
 uint8_t getCompletedCycleCount() { return _completedCycles; }

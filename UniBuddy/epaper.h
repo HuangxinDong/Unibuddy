@@ -1,19 +1,18 @@
 #pragma once
 /*
- * ============================================================
- *  E-Paper Display Module
- *  Hardware: Waveshare 2.13" e-Paper V4 (250×122, BW)
- *  Orientation: Landscape (ROTATE_270), 250 wide × 122 tall
+ * ════════════════════════════════════════════════════════════
+ *  epaper.h — E-Paper display driver & UI renderer
  *
- *  Framebuffer: 4000 bytes in RAM
- *    Paint(buf, 128, 250)  ─  physical buffer layout
- *    SetRotate(ROTATE_270) ─  maps (x 0→249, y 0→121) to raw
+ *  Hardware : Waveshare 2.13" e-Paper V4 (250×122, BW)
+ *  Layout   : Landscape via ROTATE_270  →  250 w × 122 h
+ *  Buffer   : 4000 bytes full-frame  (128/8 × 250)
  *
- *  Refresh strategy:
- *    • Mode change  → Init(FULL) + DisplayPartBaseImage (full)
- *    • Timer tick   → Init(PART) + DisplayPart (partial)
- *    • Every 30 partial refreshes → forced full refresh
- * ============================================================
+ *  Refresh strategy
+ *  ────────────────
+ *  fullRefresh()    FULL init + DisplayPartBaseImage  (mode change)
+ *  partialRefresh() PART init + DisplayPart           (timer tick)
+ *  Every PARTIAL_LIMIT partials → auto full refresh to de-ghost.
+ * ════════════════════════════════════════════════════════════
  */
 
 #include <SPI.h>
@@ -24,32 +23,28 @@
 #include "pomodoro.h"
 #include "behaviour.h"
 
-// ── Globals ──────────────────────────────────────────────────
-static Epd epd;
-static unsigned char _framebuf[128 / 8 * 250];   // 4000 bytes
-static Paint paint(_framebuf, 128, 250);          // physical w/h
-
-static int  _partialCount = 0;
-static const int PARTIAL_LIMIT = 30;   // force full refresh after N partials
-
-// ── Colored constants (e-paper: 0 = black, 1 = white) ──────
+// ── Colour aliases (e-paper: 0 = black, 1 = white) ─────────
 #define COL_BLACK  0
 #define COL_WHITE  1
 
+// ── Framebuffer & paint object ──────────────────────────────
+static Epd           epd;
+static unsigned char _framebuf[128 / 8 * 250];   // 4000 B
+static Paint         paint(_framebuf, 128, 250);  // physical w, h
+
+static int _partialCount            = 0;
+static const int PARTIAL_LIMIT      = 30;
+
 // ── Forward declarations ────────────────────────────────────
-void drawBitmap16(int x, int y, const uint8_t* bmp);
-void drawTimer(uint32_t seconds, int x, int y, sFONT* font);
-void drawProgressBar(int x, int y, int w, int h, float progress);
-void drawCenteredString(int y, const char* text, sFONT* font);
-void renderToBuffer(int mode);
-void fullRefresh(int mode);
-void partialRefresh(int mode);
+static void renderToBuffer(AppMode mode);
+static void drawBitmap16(int x, int y, const uint8_t* bmp);
+static void drawTimer(uint32_t seconds, int x, int y, sFONT* font);
+static void drawProgressBar(int x, int y, int w, int h, float pct);
+static void drawCenteredString(int y, const char* text, sFONT* font);
 
-// ════════════════════════════════════════════════════════════
-//  Init / Splash
-// ════════════════════════════════════════════════════════════
+// ── Init / Splash ───────────────────────────────────────────
 
-void initDisplay() {
+static void initDisplay() {
   if (epd.Init(FULL) != 0) {
     Serial.println(F("[EPD] Init failed!"));
     return;
@@ -59,7 +54,7 @@ void initDisplay() {
   Serial.println(F("[EPD] Ready (landscape 250x122)"));
 }
 
-void showSplashScreen() {
+static void showSplashScreen() {
   paint.Clear(COL_WHITE);
 
   // Title
@@ -77,18 +72,16 @@ void showSplashScreen() {
   epd.Display(_framebuf);
 }
 
-// ════════════════════════════════════════════════════════════
-//  Refresh helpers
-// ════════════════════════════════════════════════════════════
+// ── Refresh helpers ─────────────────────────────────────────
 
-void fullRefresh(int mode) {
+static void fullRefresh(AppMode mode) {
   epd.Init(FULL);
   renderToBuffer(mode);
   epd.DisplayPartBaseImage(_framebuf);   // full refresh + set base
   _partialCount = 0;
 }
 
-void partialRefresh(int mode) {
+static void partialRefresh(AppMode mode) {
   if (_partialCount >= PARTIAL_LIMIT) {
     fullRefresh(mode);                   // fight ghosting
     return;
@@ -99,15 +92,13 @@ void partialRefresh(int mode) {
   _partialCount++;
 }
 
-void sleepDisplay() {
+static void sleepDisplay() {
   epd.Sleep();
 }
 
-// ════════════════════════════════════════════════════════════
-//  Render frame into buffer
-// ════════════════════════════════════════════════════════════
+// ── Render frame into buffer ────────────────────────────────
 
-void renderToBuffer(int mode) {
+static void renderToBuffer(AppMode mode) {
   paint.Clear(COL_WHITE);
 
   // Pet face — top-left corner in every mode
@@ -115,7 +106,7 @@ void renderToBuffer(int mode) {
 
   switch (mode) {
     // ── IDLE ────────────────────────────────────────────────
-    case 0: {  // MODE_IDLE
+    case MODE_IDLE: {
       paint.DrawStringAt(30, 4, "UniBuddy", &Font20, COL_BLACK);
 
       paint.DrawHorizontalLine(30, 26, 120, COL_BLACK);
@@ -132,7 +123,7 @@ void renderToBuffer(int mode) {
     }
 
     // ── POMODORO ────────────────────────────────────────────
-    case 1: {  // MODE_POMODORO
+    case MODE_POMODORO: {
       uint32_t sLeft = pomodoroSecondsLeft();
 
       // Mode label
@@ -153,7 +144,7 @@ void renderToBuffer(int mode) {
     }
 
     // ── BREAK ───────────────────────────────────────────────
-    case 2: {  // MODE_BREAK
+    case MODE_BREAK: {
       uint32_t sLeft = breakSecondsLeft();
 
       paint.DrawStringAt(30, 4, "BREAK TIME", &Font16, COL_BLACK);
@@ -169,7 +160,7 @@ void renderToBuffer(int mode) {
     }
 
     // ── NUDGE ───────────────────────────────────────────────
-    case 3: {  // MODE_NUDGE
+    case MODE_NUDGE: {
       paint.DrawStringAt(30, 10, "Hey!", &Font24, COL_BLACK);
       paint.DrawStringAt(30, 44, "Get back to", &Font16, COL_BLACK);
       paint.DrawStringAt(30, 66, "work! :)", &Font16, COL_BLACK);
@@ -177,7 +168,7 @@ void renderToBuffer(int mode) {
     }
 
     // ── STATS ───────────────────────────────────────────────
-    case 4: {  // MODE_STATS
+    case MODE_STATS: {
       paint.DrawStringAt(30, 4, "TODAY'S STATS", &Font16, COL_BLACK);
       paint.DrawHorizontalLine(6, 24, 238, COL_BLACK);
 
@@ -202,12 +193,9 @@ void renderToBuffer(int mode) {
   }
 }
 
-// ════════════════════════════════════════════════════════════
-//  Drawing helpers
-// ════════════════════════════════════════════════════════════
+// ── Drawing helpers ─────────────────────────────────────────
 
-// Draw a 16×16 PROGMEM bitmap (2 bytes per row, 16 rows = 32 B)
-void drawBitmap16(int x, int y, const uint8_t* bmp) {
+static void drawBitmap16(int x, int y, const uint8_t* bmp) {
   for (int row = 0; row < 16; row++) {
     uint8_t b0 = pgm_read_byte(&bmp[row * 2]);
     uint8_t b1 = pgm_read_byte(&bmp[row * 2 + 1]);
@@ -220,8 +208,7 @@ void drawBitmap16(int x, int y, const uint8_t* bmp) {
   }
 }
 
-// Format seconds as MM:SS and draw at (x,y)
-void drawTimer(uint32_t seconds, int x, int y, sFONT* font) {
+static void drawTimer(uint32_t seconds, int x, int y, sFONT* font) {
   char buf[6];
   uint32_t m = seconds / 60;
   uint32_t s = seconds % 60;
@@ -229,23 +216,21 @@ void drawTimer(uint32_t seconds, int x, int y, sFONT* font) {
   paint.DrawStringAt(x, y, buf, font, COL_BLACK);
 }
 
-// Draw a progress bar outline + fill
-void drawProgressBar(int x, int y, int w, int h, float progress) {
-  if (progress < 0.0f) progress = 0.0f;
-  if (progress > 1.0f) progress = 1.0f;
+static void drawProgressBar(int x, int y, int w, int h, float pct) {
+  if (pct < 0.0f) pct = 0.0f;
+  if (pct > 1.0f) pct = 1.0f;
 
   // Outline
   paint.DrawRectangle(x, y, x + w - 1, y + h - 1, COL_BLACK);
 
   // Fill
-  int fill = (int)(progress * (w - 4));
+  int fill = (int)(pct * (w - 4));
   if (fill > 0) {
     paint.DrawFilledRectangle(x + 2, y + 2, x + 2 + fill - 1, y + h - 3, COL_BLACK);
   }
 }
 
-// Draw string centered horizontally at given y
-void drawCenteredString(int y, const char* text, sFONT* font) {
+static void drawCenteredString(int y, const char* text, sFONT* font) {
   int textWidth = strlen(text) * font->Width;
   int x = (DISPLAY_WIDTH - textWidth) / 2;
   if (x < 0) x = 0;

@@ -1,17 +1,34 @@
 #pragma once
+/*
+ * ────────────────────────────────────────────────────────────
+ *  input.h — Button & shake-sensor driver
+ *
+ *  Button (PIN_BUTTON, D2):
+ *    INPUT_PULLUP, active LOW while held.
+ *    Short press  (<600 ms) → EVT_BTN_SHORT
+ *    Long  press  (≥600 ms) → EVT_BTN_LONG   (fires while held)
+ *
+ *  Shake sensor (PIN_SHAKE_SW, D3):
+ *    SW-420, goes LOW on vibration → EVT_SHAKE
+ * ────────────────────────────────────────────────────────────
+ */
 #include <Arduino.h>
 #include "config.h"
 
+// ── Event type returned by readInput() ──────────────────────
 enum InputEvent {
   EVT_NONE,
-  EVT_BTN_SHORT,
-  EVT_BTN_LONG,
-  EVT_SHAKE
+  EVT_BTN_SHORT,        // released before long-press threshold
+  EVT_BTN_LONG,         // held past BTN_LONG_PRESS_MS
+  EVT_SHAKE             // vibration detected
 };
 
-static bool     _lastBtnState   = HIGH;
-static uint32_t _btnPressTime   = 0;
-static bool     _btnHandled     = false;
+// ── Internal state ──────────────────────────────────────────
+static bool     _btnPrev    = HIGH;
+static uint32_t _btnDownMs  = 0;
+static bool     _btnFired   = false;   // long-press already emitted?
+
+// ── Public API ──────────────────────────────────────────────
 
 void initInput() {
   pinMode(PIN_BUTTON,   INPUT_PULLUP);
@@ -19,38 +36,38 @@ void initInput() {
 }
 
 InputEvent readInput() {
-  // ── Button ──────────────────────────────────────────────────
-  bool btnState = digitalRead(PIN_BUTTON);
+  /* ─── Button ──────────────────────────────────────────── */
+  bool cur = digitalRead(PIN_BUTTON);
 
-  if (btnState == LOW && _lastBtnState == HIGH) {
-    // pressed
-    _btnPressTime = millis();
-    _btnHandled   = false;
+  // Falling edge → record press time
+  if (cur == LOW && _btnPrev == HIGH) {
+    _btnDownMs = millis();
+    _btnFired  = false;
   }
 
-  if (btnState == LOW && !_btnHandled) {
-    if (millis() - _btnPressTime >= BTN_LONG_PRESS_MS) {
-      _btnHandled = true;
-      _lastBtnState = btnState;
+  // Still held → check for long press
+  if (cur == LOW && !_btnFired) {
+    if (millis() - _btnDownMs >= BTN_LONG_PRESS_MS) {
+      _btnFired  = true;
+      _btnPrev   = cur;
       return EVT_BTN_LONG;
     }
   }
 
-  if (btnState == HIGH && _lastBtnState == LOW && !_btnHandled) {
-    uint32_t held = millis() - _btnPressTime;
-    _lastBtnState = btnState;
-    if (held >= BTN_DEBOUNCE_MS) return EVT_BTN_SHORT;
+  // Rising edge → short press if long press wasn't already fired
+  if (cur == HIGH && _btnPrev == LOW && !_btnFired) {
+    _btnPrev = cur;
+    if (millis() - _btnDownMs >= BTN_DEBOUNCE_MS)
+      return EVT_BTN_SHORT;
   }
 
-  _lastBtnState = btnState;
+  _btnPrev = cur;
 
-  // ── Shake sensor ────────────────────────────────────────────
-  // SW-420 goes LOW when vibration detected
+  /* ─── Shake sensor ────────────────────────────────────── */
   if (digitalRead(PIN_SHAKE_SW) == LOW) {
-    delay(50); // debounce
-    if (digitalRead(PIN_SHAKE_SW) == LOW) {
+    delay(50);                             // debounce
+    if (digitalRead(PIN_SHAKE_SW) == LOW)
       return EVT_SHAKE;
-    }
   }
 
   return EVT_NONE;

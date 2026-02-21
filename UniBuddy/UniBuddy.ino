@@ -1,58 +1,61 @@
 /*
- * ============================================================
- *  UniBuddy — Main Sketch
- *  Board: Arduino Uno Q (MCU side, Zephyr)
+ * ════════════════════════════════════════════════════════════
+ *  UniBuddy.ino — Main sketch (state machine + loop)
  *
- *  Display: Waveshare 2.13" e-Paper V4 (landscape 250×122)
- *  Modules: Pomodoro Timer, Virtual Pet, Behaviour Tracker,
- *           Servo Arm (nudge), Button / Shake input
+ *  Board   : Arduino Uno Q (MCU side, Zephyr)
+ *  Display : Waveshare 2.13" e-Paper V4 (landscape 250×122)
+ *  Modules : config  → shared pins, constants, AppMode enum
+ *            epaper  → display init / refresh / UI rendering
+ *            input   → button debounce + shake sensor
+ *            pomodoro→ focus & break countdown timers
+ *            pet     → mood, sprites, blink animation
+ *            behaviour → session tracker, streak persistence
+ *            servo_arm → SG90 nudge wave animation
  *
- *  Refresh strategy (e-paper friendly):
- *    • Full refresh on mode change  (DisplayPartBaseImage)
- *    • Partial refresh on timer tick (DisplayPart, 1 Hz)
- *    • No refresh when nothing changes
- * ============================================================
+ *  Refresh strategy (e-paper friendly)
+ *  ──────────────────────────────────
+ *  • Full refresh  on mode change  (DisplayPartBaseImage)
+ *  • Partial refresh on timer tick  (DisplayPart, ≤ 1 Hz)
+ *  • No refresh when nothing changes
+ * ════════════════════════════════════════════════════════════
  */
 
 #include <SPI.h>
-#include "config.h"
-#include "epaper.h"        // replaces oled.h
-#include "pet.h"
-#include "pomodoro.h"
-#include "servo_arm.h"
-#include "behaviour.h"
-#include "input.h"
+#include "config.h"          // pins, timing, AppMode enum
+#include "epaper.h"          // display driver & UI renderer
+#include "pet.h"             // virtual pet sprites & mood
+#include "pomodoro.h"        // focus / break timers
+#include "servo_arm.h"       // SG90 servo nudge
+#include "behaviour.h"       // session & streak persistence
+#include "input.h"           // button + shake sensor
 
-// ── State Machine ───────────────────────────────────────────
-enum AppMode {
-  MODE_IDLE,
-  MODE_POMODORO,
-  MODE_BREAK,
-  MODE_NUDGE,
-  MODE_STATS
-};
+// ── Runtime state ───────────────────────────────────────────
+static AppMode currentMode      = MODE_IDLE;
+static int     _lastMode        = -1;           // force first full refresh
+static uint32_t _lastTimerSecond = 0xFFFFFFFF;
 
-AppMode currentMode = MODE_IDLE;
-
-// ── Display tracking ────────────────────────────────────────
-static int      lastMode        = -1;        // force first full refresh
-static uint32_t lastTimerSecond = 0xFFFFFFFF;
-static bool     displayDirty    = false;     // set true on any event
+// ── Forward declarations ────────────────────────────────────
+void handleModeSwitch(InputEvent evt);
+void updateIdle();
+void updatePomodoro();
+void updateBreak();
+void updateNudge();
+void updateStats();
 
 // ── Setup ───────────────────────────────────────────────────
 void setup() {
   Serial.begin(115200);
 
-  initDisplay();             // e-paper init (FULL mode, Clear)
+  initDisplay();
   initServoArm();
   initInput();
   initPomodoro();
   initBehaviour();
 
   showSplashScreen();
-  delay(2000);               // longer pause — e-paper needs time
+  delay(2000);               // e-paper needs visible hold time
 
-  fullRefresh(MODE_IDLE);    // paint IDLE screen as partial-refresh base
+  fullRefresh(MODE_IDLE);    // paint IDLE screen as partial base
   Serial.println(F("[Buddy] Ready!"));
 }
 
@@ -72,22 +75,22 @@ void loop() {
     case MODE_STATS:    updateStats();    break;
   }
 
-  // ── Decide whether the display needs a refresh ───────────
-  bool modeChanged = ((int)currentMode != lastMode);
+  // ── Display refresh logic ────────────────────────────────
+  bool modeChanged = ((int)currentMode != _lastMode);
   bool timerTicked = false;
 
   if (currentMode == MODE_POMODORO) {
     uint32_t sec = pomodoroSecondsLeft();
-    if (sec != lastTimerSecond) { lastTimerSecond = sec; timerTicked = true; }
+    if (sec != _lastTimerSecond) { _lastTimerSecond = sec; timerTicked = true; }
   } else if (currentMode == MODE_BREAK) {
     uint32_t sec = breakSecondsLeft();
-    if (sec != lastTimerSecond) { lastTimerSecond = sec; timerTicked = true; }
+    if (sec != _lastTimerSecond) { _lastTimerSecond = sec; timerTicked = true; }
   }
 
   if (modeChanged) {
     fullRefresh(currentMode);
-    lastMode = (int)currentMode;
-    lastTimerSecond = 0xFFFFFFFF;   // reset so first tick triggers partial
+    _lastMode = (int)currentMode;
+    _lastTimerSecond = 0xFFFFFFFF;   // reset so first tick triggers partial
   } else if (timerTicked) {
     partialRefresh(currentMode);
   }
@@ -95,7 +98,7 @@ void loop() {
   delay(50);     // 20 Hz input polling; display updates ≤ 1 Hz
 }
 
-// Mode Switching
+// ── Mode Switching ──────────────────────────────────────────
 void handleModeSwitch(InputEvent evt) {
   switch (evt) {
     case EVT_BTN_LONG:          // long press → toggle pomodoro
@@ -143,12 +146,15 @@ void handleModeSwitch(InputEvent evt) {
   }
 }
 
-// Idle
+// ── Per-mode update functions ───────────────────────────────
 void updateIdle() {
-  tickPetAnimation();           // pet breathes / blinks
+  tickPetAnimation();
 }
 
-// Break
+void updatePomodoro() {
+  // timer ticks are checked in loop() display logic
+}
+
 void updateBreak() {
   tickBreakTimer();
   if (isBreakFinished()) {
@@ -158,7 +164,6 @@ void updateBreak() {
   }
 }
 
-// Nudge
 void updateNudge() {
   tickServoNudge();             // servo wave animation
   if (!isNudging()) {
@@ -167,8 +172,6 @@ void updateNudge() {
   }
 }
 
-// Stats
 void updateStats() {
-  // Behaviour tracker shows sessions today, streak, mood
-  // Rendered inside renderFrame()
+  // static screen — rendered by renderToBuffer(MODE_STATS)
 }

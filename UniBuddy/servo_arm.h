@@ -1,7 +1,15 @@
 #pragma once
+/*
+ * ────────────────────────────────────────────────────────────
+ *  servo_arm.h — SG90 servo "nudge" wave animation
+ *
+ *  Falls back to Serial logging when <Servo.h> is unavailable.
+ * ────────────────────────────────────────────────────────────
+ */
 #include <Arduino.h>
 #include "config.h"
 
+// ── Servo library availability (auto-detected) ──────────────
 #if defined(__has_include)
   #if __has_include(<Servo.h>)
     #include <Servo.h>
@@ -13,21 +21,21 @@
   #define SERVO_LIB_AVAILABLE 0
 #endif
 
+// ── Internal state ──────────────────────────────────────────
 static bool     _nudging       = false;
 static uint8_t  _nudgeStep     = 0;
 static uint32_t _lastNudgeTick = 0;
 
-// Nudge sequence: wave back and forth 3 times
-const uint8_t NUDGE_SEQ[] = {
-  SERVO_REST_ANGLE,
-  SERVO_WAVE_ANGLE,
-  SERVO_REST_ANGLE,
-  SERVO_WAVE_ANGLE,
-  SERVO_REST_ANGLE,
-  SERVO_NUDGE_ANGLE,
+// Nudge keyframes: wave → rest → wave → rest → angle → rest
+static const uint8_t NUDGE_SEQ[] = {
+  SERVO_REST_ANGLE,  SERVO_WAVE_ANGLE,
+  SERVO_REST_ANGLE,  SERVO_WAVE_ANGLE,
+  SERVO_REST_ANGLE,  SERVO_NUDGE_ANGLE,
   SERVO_REST_ANGLE
 };
-const uint8_t NUDGE_SEQ_LEN = sizeof(NUDGE_SEQ);
+static const uint8_t NUDGE_SEQ_LEN = sizeof(NUDGE_SEQ);
+
+// ── Public API ──────────────────────────────────────────────
 
 #if SERVO_LIB_AVAILABLE
 Servo buddyArm;

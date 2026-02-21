@@ -1,7 +1,15 @@
 #pragma once
+/*
+ * ────────────────────────────────────────────────────────────
+ *  pet.h — Virtual-pet mood & pixel-art sprites
+ *
+ *  Each sprite is a 16×16 monochrome bitmap (32 bytes, PROGMEM).
+ *  The animation system toggles between two frames for blink.
+ * ────────────────────────────────────────────────────────────
+ */
 #include <Arduino.h>
 
-// ── Pet mood ─────────────────────────────────────────────────
+// ── Mood enum ───────────────────────────────────────────────
 enum PetMood {
   MOOD_HAPPY,
   MOOD_FOCUSED,
@@ -10,15 +18,15 @@ enum PetMood {
   MOOD_ASLEEP
 };
 
+// ── Internal state ──────────────────────────────────────────
 static PetMood  _mood          = MOOD_HAPPY;
 static uint8_t  _animFrame     = 0;
 static uint32_t _lastAnimTick  = 0;
-static uint32_t _animInterval  = 400;  // ms per frame
+static const uint32_t ANIM_INTERVAL = 400;  // ms per frame
 
-// ── Pixel art frames (16x16, 1bpp, stored as 2 rows of bytes)
-// Each frame = 32 bytes. Drawn via Adafruit GFX drawBitmap.
-// 
-// HAPPY face — 2 frames (blinking)
+// ── Sprites (16×16, 1 bpp, 2 bytes/row, 32 B each) ─────────
+
+// HAPPY — 2 frames (open eyes / blink)
 const uint8_t PET_HAPPY_0[] PROGMEM = {
   0x00,0x00, 0x07,0xE0, 0x18,0x18, 0x20,0x04,
   0x44,0x22, 0x44,0x22, 0x80,0x01, 0x80,0x01,
@@ -56,8 +64,10 @@ const uint8_t PET_EXCITED[] PROGMEM = {
   0x20,0x04, 0x18,0x18, 0x07,0xE0, 0x00,0x00
 };
 
+// ── Public API ──────────────────────────────────────────────
+
 void tickPetAnimation() {
-  if (millis() - _lastAnimTick < _animInterval) return;
+  if (millis() - _lastAnimTick < ANIM_INTERVAL) return;
   _lastAnimTick = millis();
   _animFrame = (_animFrame + 1) % 2;
 }
