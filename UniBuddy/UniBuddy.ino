@@ -136,7 +136,8 @@ void loop() {
 // Mode Switching
 void handleModeSwitch(InputEvent evt) {
   switch (evt) {
-    case EVT_BTN_LONG:          // double tap → toggle pomodoro
+    case EVT_BTN_LONG:          // long press → toggle pomodoro
+    case EVT_DOUBLE_TAP:        // double tap → toggle pomodoro
       if (currentMode == MODE_IDLE) {
         startPomodoro();
         setPetMood(MOOD_FOCUSED);

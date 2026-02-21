@@ -31,9 +31,9 @@
   #define LONG_BREAK         (15UL * 60 * 1000)    // 15 min (every 4 sessions)
 #endif
 
-// Tap sensor timing
-#define TAP_DEBOUNCE_MS       80    // ignore bounces shorter than this
-#define DOUBLE_TAP_WINDOW_MS  400   // max gap between taps for double-tap
+// Button timing
+#define BTN_DEBOUNCE_MS   50
+#define BTN_LONG_PRESS_MS 600
 
 // Servo
 #define SERVO_REST_ANGLE  0
