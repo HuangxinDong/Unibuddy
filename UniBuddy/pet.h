@@ -1,90 +1,88 @@
 #pragma once
 #include <Arduino.h>
 
-// ── Pet mood ─────────────────────────────────────────────────
+// ── Pet emotions ─────────────────────────────────────────────
 enum PetMood {
   MOOD_HAPPY,
+  MOOD_INTERESTED,
+  MOOD_SAD,
+  MOOD_ANGRY,
+  MOOD_CONFUSED,
+  MOOD_DESPISED,
   MOOD_FOCUSED,
   MOOD_TIRED,
-  MOOD_EXCITED,
-  MOOD_ASLEEP
+  MOOD_ASLEEP,
 };
 
 static PetMood  _mood          = MOOD_HAPPY;
-static uint8_t  _animFrame     = 0;
+static uint8_t  _animPhase     = 0;
 static uint32_t _lastAnimTick  = 0;
-static uint32_t _animInterval  = 400;  // ms per frame
 
-// ── Pixel art frames (16x16, 1bpp, stored as 2 rows of bytes)
-// Each frame = 32 bytes. Drawn via Adafruit GFX drawBitmap.
-// 
-// HAPPY face — 2 frames (blinking)
-const uint8_t PET_HAPPY_0[] PROGMEM = {
-  0x00,0x00, 0x07,0xE0, 0x18,0x18, 0x20,0x04,
-  0x44,0x22, 0x44,0x22, 0x80,0x01, 0x80,0x01,
-  0x80,0x01, 0x99,0x99, 0xA0,0x05, 0x40,0x02,
-  0x20,0x04, 0x18,0x18, 0x07,0xE0, 0x00,0x00
-};
-const uint8_t PET_HAPPY_1[] PROGMEM = {  // blink
-  0x00,0x00, 0x07,0xE0, 0x18,0x18, 0x20,0x04,
-  0x4C,0x32, 0x40,0x02, 0x80,0x01, 0x80,0x01,
-  0x80,0x01, 0x99,0x99, 0xA0,0x05, 0x40,0x02,
-  0x20,0x04, 0x18,0x18, 0x07,0xE0, 0x00,0x00
+const uint8_t PET_ANIM_PHASES = 8;
+const uint16_t PET_ANIM_INTERVALS[PET_ANIM_PHASES] = {
+  1800, // open center
+  350,  // glance left
+  350,  // center
+  350,  // glance right
+  1200, // center
+  140,  // blink half
+  120,  // blink closed
+  140   // blink half
 };
 
-// FOCUSED face — squinting eyes
-const uint8_t PET_FOCUSED[] PROGMEM = {
-  0x00,0x00, 0x07,0xE0, 0x18,0x18, 0x20,0x04,
-  0x7C,0x3E, 0x00,0x00, 0x80,0x01, 0x80,0x01,
-  0x80,0x01, 0x9F,0xF9, 0xA0,0x05, 0x40,0x02,
-  0x20,0x04, 0x18,0x18, 0x07,0xE0, 0x00,0x00
-};
-
-// TIRED face — half-closed eyes, small mouth
-const uint8_t PET_TIRED[] PROGMEM = {
-  0x00,0x00, 0x07,0xE0, 0x18,0x18, 0x20,0x04,
-  0x7C,0x3E, 0x00,0x00, 0x80,0x01, 0x80,0x01,
-  0x80,0x01, 0x80,0x01, 0x87,0xE1, 0x40,0x02,
-  0x20,0x04, 0x18,0x18, 0x07,0xE0, 0x00,0x00
-};
-
-// EXCITED — big eyes, open mouth
-const uint8_t PET_EXCITED[] PROGMEM = {
-  0x00,0x00, 0x07,0xE0, 0x18,0x18, 0x24,0x24,
-  0x66,0x66, 0x66,0x66, 0x80,0x01, 0x80,0x01,
-  0x81,0x81, 0xFF,0xFF, 0xBF,0xFD, 0x40,0x02,
-  0x20,0x04, 0x18,0x18, 0x07,0xE0, 0x00,0x00
-};
-
-void tickPetAnimation() {
-  if (millis() - _lastAnimTick < _animInterval) return;
+bool tickPetAnimation() {
+  uint16_t interval = PET_ANIM_INTERVALS[_animPhase];
+  if (millis() - _lastAnimTick < interval) return false;
   _lastAnimTick = millis();
-  _animFrame = (_animFrame + 1) % 2;
+  _animPhase = (_animPhase + 1) % PET_ANIM_PHASES;
+  return true;
 }
 
 void setPetMood(PetMood mood) {
   _mood = mood;
-  _animFrame = 0;
+  _animPhase = 0;
+  _lastAnimTick = millis();
 }
 
 PetMood getPetMood() { return _mood; }
 
-// Returns the correct bitmap pointer for current state
-const uint8_t* getPetBitmap() {
+const char* getPetMoodName() {
   switch (_mood) {
-    case MOOD_FOCUSED:  return PET_FOCUSED;
-    case MOOD_TIRED:    return PET_TIRED;
-    case MOOD_EXCITED:  return PET_EXCITED;
-    case MOOD_HAPPY:
-    default:
-      return (_animFrame == 0) ? PET_HAPPY_0 : PET_HAPPY_1;
+    case MOOD_HAPPY:      return "HAPPY";
+    case MOOD_INTERESTED: return "INTERESTED";
+    case MOOD_SAD:        return "SAD";
+    case MOOD_ANGRY:      return "ANGRY";
+    case MOOD_CONFUSED:   return "CONFUSED";
+    case MOOD_DESPISED:   return "DESPISED";
+    case MOOD_TIRED:      return "TIRED";
+    case MOOD_ASLEEP:     return "ASLEEP";
+    case MOOD_FOCUSED:
+    default:              return "FOCUSED";
   }
 }
 
-// Call after N sessions to update mood
+uint8_t getPetAnimPhase() {
+  return _animPhase;
+}
+
+int8_t getPetEyeOffsetX() {
+  if (_animPhase == 1) return -4;
+  if (_animPhase == 3) return 4;
+  return 0;
+}
+
+uint8_t getPetBlinkLevel() {
+  if (_animPhase == 6) return 2; // closed
+  if (_animPhase == 5 || _animPhase == 7) return 1; // half
+  return 0; // open
+}
+
+// Call after N sessions to update a default ambient emotion
 void updatePetMoodFromSessions(uint8_t sessions) {
   if      (sessions == 0) setPetMood(MOOD_HAPPY);
-  else if (sessions <= 2) setPetMood(MOOD_FOCUSED);
-  else if (sessions <= 4) setPetMood(MOOD_EXCITED);
-  else                    setPetMood(MOOD_TIRED);
+  else if (sessions <= 1) setPetMood(MOOD_INTERESTED);
+  else if (sessions <= 3) setPetMood(MOOD_FOCUSED);
+  else if (sessions <= 5) setPetMood(MOOD_HAPPY);
+  else if (sessions <= 7) setPetMood(MOOD_TIRED);
+  else                    setPetMood(MOOD_SAD);
 }

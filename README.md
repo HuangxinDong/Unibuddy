@@ -1,6 +1,6 @@
 # UniBuddy — Pocket Desktop Buddy
 
-An Arduino-based physical study companion that helps university students manage focus time through a **Pomodoro timer**, **virtual pet**, and **servo arm nudges** — all without touching a phone.
+An Arduino-based physical study companion that helps university students manage focus time through a **Pomodoro timer**, **virtual pet**, and **physical interaction sensors** — all without touching a phone.
 
 ## Minimum Runnable Unit
 
@@ -8,12 +8,12 @@ The codebase compiles and runs as a self-contained loop on the MCU side (no Linu
 
 1. **Power on** → e-paper shows splash screen → enters Idle mode.
 2. **Long-press button** → starts a 25-minute Pomodoro focus session.
-3. **Timer finishes** → records session (EEPROM), servo arm waves, enters 5-min Break (15-min every 4th session).
+3. **Timer finishes** → records session (EEPROM), shows soft nudge alert on e-paper, enters 5-min Break (15-min every 4th session).
 4. **Break finishes** → automatically starts next Pomodoro.
 5. **Short-press button** → cycles Idle ↔ Stats; skips Break when in Break mode.
-6. **Shake device** → triggers servo nudge animation, auto-returns to Idle when done.
+6. **Tap (KY031) or movement trigger** → enters nudge mode, auto-returns to Idle.
 
-All libraries have **graceful fallbacks**: if Servo or EEPROM libraries are missing, the firmware still compiles and runs with Serial output.
+All libraries have **graceful fallbacks**: if EEPROM is missing, the firmware still compiles and runs with Serial output.
 
 ---
 
@@ -22,9 +22,9 @@ All libraries have **graceful fallbacks**: if Servo or EEPROM libraries are miss
 | Component | Pin | Notes |
 |---|---|---|
 | Waveshare 2.13" e-Paper V4 (250×122, BW) | D7–D11, D13 | SPI bus (see below) |
-| SG90 Servo | D6 | PWM; use separate 5V if jitter occurs |
+| KY031 Tap Sensor | D4 | `INPUT_PULLUP`, active LOW on tap |
 | Push Button | D2 | `INPUT_PULLUP`, active LOW |
-| SW-420 Shake Sensor | D3 | `INPUT_PULLUP`, triggers LOW on vibration |
+| Modulino Movement Sensor | D3 | `INPUT_PULLUP`, active LOW trigger/interrupt |
 
 ### E-Paper SPI Wiring
 
@@ -51,13 +51,12 @@ Install via Arduino IDE Library Manager:
 
 | Library | Required? | Fallback |
 |---|---|---|
-| `Servo` | Recommended | Stub: nudge logged to Serial |
 | `EEPROM` | Recommended | RAM-only: sessions lost on reboot |
 | `SPI` | Required | Built-in (Arduino core) |
 
 E-paper driver (`epd2in13_V4`) and paint library are bundled in the sketch folder. No external install needed.
 
-> `Servo` and `EEPROM` are auto-detected via `__has_include`. No manual `#define` needed.
+> `EEPROM` is auto-detected via `__has_include`. No manual `#define` needed.
 
 ---
 
@@ -92,7 +91,8 @@ A standalone test lives in `EpaperMinTest/`:
 |---|---|
 | **Long-press button** | Idle → Start Pomodoro / Pomodoro → Pause & return to Idle |
 | **Short-press button** | Idle ↔ Stats / Break → Skip break |
-| **Shake device** | Trigger servo nudge animation |
+| **Tap sensor trigger** | Enter/exit nudge mode |
+| **Movement sensor trigger** | Enter/exit nudge mode |
 
 ---
 
@@ -102,12 +102,12 @@ A standalone test lives in `EpaperMinTest/`:
 UniBuddy/
 ├── UniBuddy.ino      Main loop & state machine (Idle/Pomodoro/Break/Nudge/Stats)
 ├── config.h           Pin assignments, timing constants, TEST_MODE toggle
-├── input.h            Button debounce & shake sensor reading
+├── input.h            Button + tap + movement sensor events
 ├── pomodoro.h         Focus & break countdown timers
 ├── behaviour.h        Session counter & streak persistence (EEPROM)
 ├── pet.h              Pet mood enum, pixel-art bitmaps, animation tick
 ├── epaper.h           E-paper landscape rendering (full/partial refresh)
-├── servo_arm.h        Servo nudge sequence (with stub fallback)
+├── servo_arm.h        Servo nudge sequence (future stage, optional)
 ├── epd2in13_V4.*      Waveshare e-paper driver (bundled)
 ├── epdpaint.*         Paint class (Draw*, rotation, framebuffer)
 ├── epdif.*            SPI hardware abstraction
@@ -125,8 +125,8 @@ EpaperMinTest/
    ▲  short-press     │                  │ short-press       │
    └──────────────────┘                  └───────► IDLE ◄────┘
    ▲                                                   │
-   └──── NUDGE (auto-return when servo sequence ends) ◄┘
-         (shake triggers from any mode)
+   └──── NUDGE (auto-return after short soft nudge) ◄┘
+         (tap/movement triggers from any mode)
 
    IDLE ◄──short-press──► STATS
 ```
@@ -147,13 +147,13 @@ EpaperMinTest/
 │  ┌────────────────────┐  ┌───────────────────┐  │
 │  │  MCU (STM32)       │  │  MPU (Linux)      │  │
 │  │  - E-paper render  │  │  - Python logic   │  │
-│  │  - Servo PWM       │  │  - Gemini AI API  │  │
-│  │  - Button/Shake    │◄─│  - WiFi (future)  │  │
+│  │  - Sensor input    │  │  - Gemini AI API  │  │
+│  │  - Button/Tap/Move │◄─│  - WiFi (future)  │  │
 │  │  - EEPROM save     │  │                   │  │
 │  └────────┬───────────┘  └───────────────────┘  │
 │           │   SPI / PWM / GPIO                  │
 │  ┌────────┴──────────────────────────────────┐  │
-│  │  HW: E-Paper │ Servo │ Button │ SW-420   │  │
+│  │  HW: E-Paper │ Button │ KY031 Tap │ Movement │  │
 │  └───────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────┘
 ```
@@ -167,7 +167,7 @@ EpaperMinTest/
 | Direction | Message | Meaning |
 |---|---|---|
 | MCU → Linux | `SESSION_DONE` | Completed a 25-min pomodoro |
-| MCU → Linux | `SHAKE` | User shook the device |
+| MCU → Linux | `MOTION` | Movement/tap interaction detected |
 | MCU → Linux | `BOOT` | Device powered on |
 | Linux → MCU | `SET_MOOD:2` | Override pet mood (0–4) |
 | Linux → MCU | `MSG:Study time!` | Display message on e-paper for 3s |
@@ -200,8 +200,8 @@ EpaperMinTest/
 |---|---|---|
 | P0 | Pomodoro Timer (25/5/15) | Done |
 | P0 | Virtual Pet (pixel art moods) | Done |
-| P0 | Servo Arm Nudge | Done |
-| P0 | Button + Shake Input | Done |
+| P0 | Servo Arm Nudge | Deferred (future stage) |
+| P0 | Button + Tap/Movement Input | Done |
 | P0 | Session Counter (EEPROM) | Done |
 | P0 | E-Paper Landscape Display | Done |
 | P1 | Streak Tracker | Partial (data stored, no day-boundary logic) |

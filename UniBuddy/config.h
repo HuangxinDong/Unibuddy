@@ -12,9 +12,13 @@
 #define DISPLAY_HEIGHT  122
 
 // Pins
-#define PIN_BUTTON        2     // main button (INPUT_PULLUP)
-#define PIN_SERVO         6     // SG90 signal (moved from D9; D9 is e-paper DC)
-#define PIN_SHAKE_SW      3     // SW-420 vibration sensor (or MPU-6050 INT)
+#define PIN_BUTTON        4     // main button (INPUT_PULLUP)
+#define PIN_MOVEMENT      3     // Modulino Movement digital trigger/interrupt
+#define PIN_TAP_KY031     2     // KY031 knock/tap sensor digital output
+
+// Hardware stage flags
+// Set to 1 when SG90 is wired and ready (currently early stage: keep 0)
+#define USE_SERVO_NUDGE   0
 
 // Pomodoro Durations (ms)
 #ifdef TEST_MODE
