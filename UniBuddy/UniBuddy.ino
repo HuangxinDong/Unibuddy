@@ -1,194 +1,200 @@
 /*
  * ============================================================
- *  UniBuddy.ino - Main sketch (state machine + loop)
- *  Board: Arduino Uno Q (MCU side, Zephyr)
- *  Display: Waveshare 2.13" e-Paper V4 (landscape 250x122)
+ *  UniBuddy.ino — Tilt-driven Pomodoro Pet Companion
+ *
+ *  Stand → Pet  |  Flat → Sleep  |  Tilt → Info
+ *  Flip → Focus |  Face-down → Off
+ *  Shake in Pet mode → mood reactions!
  * ============================================================
  */
 
-#include <SPI.h>
 #include "config.h"
-#include "epaper.h"
-#include "pet.h"
-#include "pomodoro.h"
-#include "behaviour.h"
 #include "input.h"
+#include "behaviour.h"
+#include "tilt.h"
+#include "epaper.h"      // includes pet.h, pomodoro.h internally
 
-#if USE_SERVO_NUDGE
-#include "servo_arm.h"
-#endif
+// ── State machine ───────────────────────────────────────────
+static AppMode currentMode  = MODE_PET;
+static AppMode prevMode     = MODE_PET;
+static AppMode candidateMode = MODE_PET;
+static uint8_t tiltCounter  = 0;
 
-// ── Runtime state ───────────────────────────────────────────
-AppMode  currentMode      = MODE_IDLE;
-static int      lastMode        = -1;
-static uint32_t lastTimerSecond = 0xFFFFFFFF;
-static bool     softNudgeActive = false;
-static uint32_t softNudgeUntil  = 0;
+// ── Timing ──────────────────────────────────────────────────
+static uint32_t _lastDisplayMs  = 0;
+static const uint16_t DISPLAY_INTERVAL_MS = 300;
+static bool _needsRedraw = true;
 
-// ── Nudge helpers (soft fallback when no servo) ─────────────
-void startNudge() {
-#if USE_SERVO_NUDGE
-  triggerNudge();
-#else
-  softNudgeActive = true;
-  softNudgeUntil = millis() + 1500;
-  Serial.println(F("[Nudge] Soft nudge (no servo)."));
-#endif
+// ── Transition logic ────────────────────────────────────────
+
+void transitionTo(AppMode newMode) {
+  if (newMode == currentMode) return;
+
+  Serial.print(F("[Mode] ")); Serial.print(currentMode);
+  Serial.print(F(" -> "));    Serial.println(newMode);
+
+  /* pause/resume pomodoro around focus mode */
+  if (currentMode == MODE_POMODORO && isPomRunning())
+    pausePomodoro();
+  if (newMode == MODE_POMODORO && !isPomRunning() && !isPomFinished())
+    resumePomodoro();
+
+  prevMode    = currentMode;
+  currentMode = newMode;
+
+  /* rotation */
+  int r = rotationForMode(currentMode, prevMode);
+  setDisplayRotation(r);
+
+  /* mode-enter actions */
+  switch (currentMode) {
+    case MODE_PET:
+      setPetMood(MOOD_HAPPY);
+      break;
+    case MODE_POMODORO:
+      setPetMood(MOOD_FOCUSED);
+      if (!isPomRunning())
+        startPomodoro();
+      break;
+    case MODE_SLEEP:
+      setPetMood(MOOD_ASLEEP);
+      break;
+    default:
+      break;
+  }
+
+  fullRefresh(currentMode);
+  _needsRedraw = false;
 }
 
-void tickNudge() {
-#if USE_SERVO_NUDGE
-  tickServoNudge();
-#else
-  if (softNudgeActive && millis() >= softNudgeUntil)
-    softNudgeActive = false;
-#endif
-}
+// ═══════════════════════════════════════════════════════════
+//  SETUP
+// ═══════════════════════════════════════════════════════════
 
-bool isNudgeActive() {
-#if USE_SERVO_NUDGE
-  return isNudging();
-#else
-  return softNudgeActive;
-#endif
-}
-
-// ── Setup ───────────────────────────────────────────────────
 void setup() {
   Serial.begin(115200);
+  delay(200);
+  Serial.println(F("\n=== UniBuddy ==="));
 
-  initDisplay();
-#if USE_SERVO_NUDGE
-  initServoArm();
-#endif
   initInput();
-  initPomodoro();
+  initTilt();
   initBehaviour();
-
+  initPomodoro();
+  initDisplay();
   showSplashScreen();
   delay(2000);
 
-  deepRefresh(MODE_IDLE);
-  Serial.println(F("[Buddy] Ready!"));
+  /* first frame */
+  int r = rotationForMode(MODE_PET, MODE_PET);
+  setDisplayRotation(r);
+  fullRefresh(MODE_PET);
 }
 
-// ── Main Loop ───────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════
+//  LOOP
+// ═══════════════════════════════════════════════════════════
+
 void loop() {
+  uint32_t now = millis();
+
+  // ── 1. Read sensors ───────────────────────────────────────
+  updateTilt();
   InputEvent evt = readInput();
-  handleModeSwitch(evt);
 
-  switch (currentMode) {
-    case MODE_IDLE:     updateIdle();     break;
-    case MODE_POMODORO: updatePomodoro(); break;
-    case MODE_BREAK:    updateBreak();    break;
-    case MODE_NUDGE:    updateNudge();    break;
-    case MODE_STATS:    updateStats();    break;
+  // ── 2. Shake handling (pet mode only) ─────────────────────
+  if (wasShakeDetected() && currentMode == MODE_PET) {
+    onShake();
+    _needsRedraw = true;
   }
 
-  bool modeChanged = ((int)currentMode != lastMode);
-  bool timerTicked = false;
-  bool animTicked  = tickPetAnimation();
+  // ── 3. Tilt-based mode switching (debounced + hysteresis + shake-lockout)
+  if (isTiltReliable()) {
+    AppMode tiltMode = classifyTilt(currentMode);
 
+    /* keep pomodoro/break visually in same slot */
+    if (currentMode == MODE_BREAK &&
+        (tiltMode == MODE_POMODORO || tiltMode == MODE_BREAK))
+      tiltMode = MODE_BREAK;
+
+    if (tiltMode != currentMode) {
+      if (tiltMode == candidateMode) {
+        tiltCounter++;
+      } else {
+        candidateMode = tiltMode;
+        tiltCounter   = 1;
+      }
+      if (tiltCounter >= TILT_DEBOUNCE_COUNT)
+        transitionTo(tiltMode);
+    } else {
+      tiltCounter = 0;
+    }
+  } else {
+    /* tilt unreliable (shake lockout) — reset debounce */
+    tiltCounter = 0;
+  }
+
+  // ── 4. Button events ─────────────────────────────────────
+  if (evt == EVT_BTN_SHORT) {
+    if (currentMode == MODE_POMODORO && !isPomRunning()) {
+      startPomodoro();
+      _needsRedraw = true;
+    }
+  }
+  if (evt == EVT_BTN_LONG) {
+    /* long-press in pet → reset sessions */
+    if (currentMode == MODE_PET) {
+      initBehaviour();
+      initPomodoro();
+      setPetMood(MOOD_HAPPY);
+      _needsRedraw = true;
+      Serial.println(F("[Btn] Reset sessions"));
+    }
+  }
+
+  // ── 5. Tap events ────────────────────────────────────────
+  if (evt == EVT_TAP && currentMode == MODE_PET) {
+    setPetMood(MOOD_INTERESTED);
+    _needsRedraw = true;
+  }
+  if (evt == EVT_DOUBLE_TAP && currentMode == MODE_PET) {
+    setPetMood(MOOD_HAPPY);
+    _needsRedraw = true;
+  }
+
+  // ── 6. Pomodoro / break timers ────────────────────────────
   if (currentMode == MODE_POMODORO) {
-    uint32_t sec = pomodoroSecondsLeft();
-    if (sec != lastTimerSecond) { lastTimerSecond = sec; timerTicked = true; }
-  } else if (currentMode == MODE_BREAK) {
-    uint32_t sec = breakSecondsLeft();
-    if (sec != lastTimerSecond) { lastTimerSecond = sec; timerTicked = true; }
+    updatePomodoro();
+    if (isPomodoroFinished()) {
+      recordSession();
+      startBreak();
+      transitionTo(MODE_BREAK);
+    }
+  }
+  if (currentMode == MODE_BREAK) {
+    tickBreakTimer();
+    if (isBreakFinished()) {
+      updatePetMoodFromSessions(getSessionCount());
+      transitionTo(MODE_PET);
+    }
   }
 
-  if (modeChanged) {
-    fullRefresh(currentMode);
-    lastMode = (int)currentMode;
-    lastTimerSecond = 0xFFFFFFFF;
-  } else if (timerTicked) {
-    partialRefresh(currentMode);
-  } else if (animTicked) {
-    partialRefresh(currentMode);
+  // ── 7. Pet idle mood decay ────────────────────────────────
+  tickPetIdleMood();
+
+  // ── 8. Pet animation tick ─────────────────────────────────
+  if (currentMode == MODE_PET || currentMode == MODE_SLEEP) {
+    if (tickPetAnimation())
+      _needsRedraw = true;
   }
 
-  delay(50);
-}
+  // ── 9. Display refresh ───────────────────────────────────
+  bool timerActive = (currentMode == MODE_POMODORO || currentMode == MODE_BREAK);
 
-// ── Mode Switching ──────────────────────────────────────────
-void handleModeSwitch(InputEvent evt) {
-  switch (evt) {
-    case EVT_BTN_LONG:
-    case EVT_DOUBLE_TAP:
-      if (currentMode == MODE_IDLE) {
-        startPomodoro();
-        setPetMood(MOOD_FOCUSED);
-        currentMode = MODE_POMODORO;
-      } else if (currentMode == MODE_POMODORO) {
-        pausePomodoro();
-        updatePetMoodFromSessions(getSessionCount());
-        currentMode = MODE_IDLE;
-      }
-      break;
-
-    case EVT_BTN_SHORT:
-      if (currentMode == MODE_BREAK) {
-        updatePetMoodFromSessions(getSessionCount());
-        currentMode = MODE_IDLE;
-      }
-      else if (currentMode == MODE_IDLE) currentMode = MODE_STATS;
-      else if (currentMode == MODE_STATS) currentMode = MODE_IDLE;
-      break;
-
-    case EVT_TAP:
-      if (currentMode != MODE_NUDGE) {
-        setPetMood(MOOD_INTERESTED);
-        currentMode = MODE_NUDGE;
-        startNudge();
-      } else {
-        updatePetMoodFromSessions(getSessionCount());
-        currentMode = MODE_IDLE;
-      }
-      break;
-
-    case EVT_MOTION:
-      if (currentMode != MODE_NUDGE) {
-        setPetMood(MOOD_CONFUSED);
-        currentMode = MODE_NUDGE;
-        startNudge();
-      } else {
-        updatePetMoodFromSessions(getSessionCount());
-        currentMode = MODE_IDLE;
-      }
-      break;
-
-    default: break;
-  }
-
-  if (currentMode == MODE_POMODORO && isPomodoroFinished()) {
-    recordSession();
-    if (getSessionCount() >= 6) setPetMood(MOOD_TIRED);
-    else                        setPetMood(MOOD_HAPPY);
-    startBreak();
-    currentMode = MODE_BREAK;
-    setPetMood(MOOD_ASLEEP);
-    startNudge();
+  if (timerActive || _needsRedraw) {
+    if (now - _lastDisplayMs >= DISPLAY_INTERVAL_MS) {
+      _lastDisplayMs = now;
+      partialRefresh(currentMode);
+      _needsRedraw = false;
+    }
   }
 }
-
-// ── Per-mode updates ────────────────────────────────────────
-void updateIdle() {}
-
-void updateBreak() {
-  tickBreakTimer();
-  if (isBreakFinished()) {
-    setPetMood(MOOD_FOCUSED);
-    currentMode = MODE_POMODORO;
-    startPomodoro();
-  }
-}
-
-void updateNudge() {
-  tickNudge();
-  if (!isNudgeActive()) {
-    updatePetMoodFromSessions(getSessionCount());
-    currentMode = MODE_IDLE;
-  }
-}
-
-void updateStats() {}
