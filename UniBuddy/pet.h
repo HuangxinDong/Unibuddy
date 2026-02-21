@@ -1,4 +1,12 @@
 #pragma once
+/*
+ * ────────────────────────────────────────────────────────────
+ *  pet.h — Virtual-pet mood & pixel-art sprites
+ *
+ *  Each sprite is a 16×16 monochrome bitmap (32 bytes, PROGMEM).
+ *  The animation system toggles between two frames for blink.
+ * ────────────────────────────────────────────────────────────
+ */
 #include <Arduino.h>
 
 // ── Pet emotions ─────────────────────────────────────────────
@@ -14,6 +22,7 @@ enum PetMood {
   MOOD_ASLEEP,
 };
 
+// ── Internal state ──────────────────────────────────────────
 static PetMood  _mood          = MOOD_HAPPY;
 static uint8_t  _animPhase     = 0;
 static uint32_t _lastAnimTick  = 0;

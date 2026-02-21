@@ -1,6 +1,18 @@
 #pragma once
+/*
+ * ────────────────────────────────────────────────────────────
+ *  behaviour.h — Session counter & streak persistence
+ *
+ *  Uses EEPROM when available; falls back to RAM-only mode.
+ *  EEPROM layout (4 bytes total):
+ *    Addr 0   uint8_t   sessions_today
+ *    Addr 1   uint8_t   streak_days
+ *    Addr 2-3 uint16_t  last_day_stamp (unused; future)
+ * ────────────────────────────────────────────────────────────
+ */
 #include <Arduino.h>
 
+// ── EEPROM availability (auto-detected) ─────────────────────
 #if defined(__has_include)
   #if __has_include(<EEPROM.h>)
     #include <EEPROM.h>
@@ -12,20 +24,17 @@
   #define EEPROM_LIB_AVAILABLE 0
 #endif
 
-// ── EEPROM layout ─────────────────────────────────────────────
-// Addr 0:   uint8_t  sessions_today
-// Addr 1:   uint8_t  streak_days
-// Addr 2-3: uint16_t last_day_stamp  (day count since epoch, approx)
-//
-// Note: Arduino Uno has 1KB EEPROM. We keep it simple.
-
+// ── EEPROM addresses ────────────────────────────────────────
 #define EE_SESSIONS  0
 #define EE_STREAK    1
 #define EE_DAY_LO    2
 #define EE_DAY_HI    3
 
-static uint8_t  _sessionsToday = 0;
-static uint8_t  _streakDays    = 0;
+// ── Internal state ──────────────────────────────────────────
+static uint8_t _sessionsToday = 0;
+static uint8_t _streakDays    = 0;
+
+// ── Public API ──────────────────────────────────────────────
 
 void initBehaviour() {
 #if EEPROM_LIB_AVAILABLE
@@ -67,13 +76,6 @@ void resetStreak() {
 #endif
 }
 
+// ── Getters ─────────────────────────────────────────────────
 uint8_t getSessionCount() { return _sessionsToday; }
 uint8_t getStreakDays()    { return _streakDays;    }
-
-// Mood recommendation based on behaviour
-// (used by pet.h to auto-set mood)
-bool shouldNudge() {
-  // Simple heuristic: if no session started in last 45 min
-  // For hackathon, just trigger every shake
-  return false;
-}
