@@ -9,8 +9,8 @@
  * ============================================================
  */
 
-// ── Compile-time toggles ────────────────────────────────────
-// Uncomment for rapid testing (10 s focus / 3 s break / 5 s long break)
+// ── Test Mode ─────────────────────────────────────────────────
+// Uncomment the line below for rapid testing (10s focus / 3s break)
 // #define TEST_MODE
 
 // ── Application state machine ───────────────────────────────
@@ -29,9 +29,14 @@ enum AppMode {
 #define PIN_SHAKE_SW      3     // SW-420 vibration sensor  (INPUT_PULLUP)
 #define PIN_SERVO         6     // SG90 signal (D9 used by e-paper DC)
 
-// ── Display (Waveshare 2.13" e-Paper V4, landscape) ────────
-#define DISPLAY_WIDTH   250     // pixels, after ROTATE_270
-#define DISPLAY_HEIGHT  122
+// Pins
+#define PIN_BUTTON        4     // main button (INPUT_PULLUP)
+#define PIN_MOVEMENT      3     // Modulino Movement digital trigger/interrupt
+#define PIN_TAP_KY031     2     // KY031 knock/tap sensor digital output
+
+// Hardware stage flags
+// Set to 1 when SG90 is wired and ready (currently early stage: keep 0)
+#define USE_SERVO_NUDGE   0
 
 // ── Pomodoro timing (ms) ────────────────────────────────────
 #ifdef TEST_MODE

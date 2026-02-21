@@ -2,15 +2,9 @@
  * ════════════════════════════════════════════════════════════
  *  UniBuddy.ino — Main sketch (state machine + loop)
  *
- *  Board   : Arduino Uno Q (MCU side, Zephyr)
- *  Display : Waveshare 2.13" e-Paper V4 (landscape 250×122)
- *  Modules : config  → shared pins, constants, AppMode enum
- *            epaper  → display init / refresh / UI rendering
- *            input   → button debounce + shake sensor
- *            pomodoro→ focus & break countdown timers
- *            pet     → mood, sprites, blink animation
- *            behaviour → session tracker, streak persistence
- *            servo_arm → SG90 nudge wave animation
+ *  Display: Waveshare 2.13" e-Paper V4 (landscape 250×122)
+ *  Modules: Pomodoro Timer, Virtual Pet, Behaviour Tracker,
+ *           Soft Nudge, Button / Tap / Movement input
  *
  *  Refresh strategy (e-paper friendly)
  *  ──────────────────────────────────
@@ -21,33 +15,71 @@
  */
 
 #include <SPI.h>
-#include "config.h"          // pins, timing, AppMode enum
-#include "epaper.h"          // display driver & UI renderer
-#include "pet.h"             // virtual pet sprites & mood
-#include "pomodoro.h"        // focus / break timers
-#include "servo_arm.h"       // SG90 servo nudge
-#include "behaviour.h"       // session & streak persistence
-#include "input.h"           // button + shake sensor
+#include "config.h"
+#include "epaper.h"        // replaces oled.h
+#include "pet.h"
+#include "pomodoro.h"
+#include "behaviour.h"
+#include "input.h"
 
-// ── Runtime state ───────────────────────────────────────────
-static AppMode currentMode      = MODE_IDLE;
-static int     _lastMode        = -1;           // force first full refresh
-static uint32_t _lastTimerSecond = 0xFFFFFFFF;
+#if USE_SERVO_NUDGE
+#include "servo_arm.h"
+#endif
 
-// ── Forward declarations ────────────────────────────────────
-void handleModeSwitch(InputEvent evt);
-void updateIdle();
-void updatePomodoro();
-void updateBreak();
-void updateNudge();
-void updateStats();
+// ── State Machine ───────────────────────────────────────────
+enum AppMode {
+  MODE_IDLE,
+  MODE_POMODORO,
+  MODE_BREAK,
+  MODE_NUDGE,
+  MODE_STATS
+};
+
+AppMode currentMode = MODE_IDLE;
+
+// ── Display tracking ────────────────────────────────────────
+static int      lastMode        = -1;        // force first full refresh
+static uint32_t lastTimerSecond = 0xFFFFFFFF;
+static bool     displayDirty    = false;     // set true on any event
+static bool     softNudgeActive = false;
+static uint32_t softNudgeUntil  = 0;
+
+void startNudge() {
+#if USE_SERVO_NUDGE
+  triggerNudge();
+#else
+  softNudgeActive = true;
+  softNudgeUntil = millis() + 1500;
+  Serial.println(F("[Nudge] Soft nudge triggered (no servo)."));
+#endif
+}
+
+void tickNudge() {
+#if USE_SERVO_NUDGE
+  tickServoNudge();
+#else
+  if (softNudgeActive && millis() >= softNudgeUntil) {
+    softNudgeActive = false;
+  }
+#endif
+}
+
+bool isNudgeActive() {
+#if USE_SERVO_NUDGE
+  return isNudging();
+#else
+  return softNudgeActive;
+#endif
+}
 
 // ── Setup ───────────────────────────────────────────────────
 void setup() {
   Serial.begin(115200);
 
-  initDisplay();
+  initDisplay();             // e-paper init (FULL mode, Clear)
+#if USE_SERVO_NUDGE
   initServoArm();
+#endif
   initInput();
   initPomodoro();
   initBehaviour();
@@ -55,7 +87,7 @@ void setup() {
   showSplashScreen();
   delay(2000);               // e-paper needs visible hold time
 
-  fullRefresh(MODE_IDLE);    // paint IDLE screen as partial base
+  deepRefresh(MODE_IDLE);    // paint IDLE screen as partial-refresh base (with flash)
   Serial.println(F("[Buddy] Ready!"));
 }
 
@@ -78,6 +110,7 @@ void loop() {
   // ── Display refresh logic ────────────────────────────────
   bool modeChanged = ((int)currentMode != _lastMode);
   bool timerTicked = false;
+  bool animTicked  = tickPetAnimation();
 
   if (currentMode == MODE_POMODORO) {
     uint32_t sec = pomodoroSecondsLeft();
@@ -93,6 +126,8 @@ void loop() {
     _lastTimerSecond = 0xFFFFFFFF;   // reset so first tick triggers partial
   } else if (timerTicked) {
     partialRefresh(currentMode);
+  } else if (animTicked) {
+    partialRefresh(currentMode);
   }
 
   delay(50);     // 20 Hz input polling; display updates ≤ 1 Hz
@@ -102,6 +137,7 @@ void loop() {
 void handleModeSwitch(InputEvent evt) {
   switch (evt) {
     case EVT_BTN_LONG:          // long press → toggle pomodoro
+    case EVT_DOUBLE_TAP:        // double tap → toggle pomodoro
       if (currentMode == MODE_IDLE) {
         startPomodoro();
         setPetMood(MOOD_FOCUSED);
@@ -113,7 +149,7 @@ void handleModeSwitch(InputEvent evt) {
       }
       break;
 
-    case EVT_BTN_SHORT:         // short press → cycle stats / break ack
+    case EVT_BTN_SHORT:         // single tap → cycle stats / break ack
       if (currentMode == MODE_BREAK) {
         updatePetMoodFromSessions(getSessionCount());
         currentMode = MODE_IDLE;
@@ -122,11 +158,22 @@ void handleModeSwitch(InputEvent evt) {
       else if (currentMode == MODE_STATS) currentMode = MODE_IDLE;
       break;
 
-    case EVT_SHAKE:             // shake → nudge mode / dismiss
+    case EVT_TAP:               // tap → interested nudge mode / dismiss
       if (currentMode != MODE_NUDGE) {
-        setPetMood(MOOD_EXCITED);
+        setPetMood(MOOD_INTERESTED);
         currentMode = MODE_NUDGE;
-        triggerNudge();
+        startNudge();
+      } else {
+        updatePetMoodFromSessions(getSessionCount());
+        currentMode = MODE_IDLE;
+      }
+      break;
+
+    case EVT_MOTION:            // motion → confused nudge mode / dismiss
+      if (currentMode != MODE_NUDGE) {
+        setPetMood(MOOD_CONFUSED);
+        currentMode = MODE_NUDGE;
+        startNudge();
       } else {
         updatePetMoodFromSessions(getSessionCount());
         currentMode = MODE_IDLE;
@@ -139,20 +186,18 @@ void handleModeSwitch(InputEvent evt) {
   // Auto-transition: pomodoro finished → break
   if (currentMode == MODE_POMODORO && isPomodoroFinished()) {
     recordSession();            // behaviour tracker
-    setPetMood(MOOD_HAPPY);
+    if (getSessionCount() >= 6) setPetMood(MOOD_TIRED);
+    else                        setPetMood(MOOD_HAPPY);
     startBreak();
     currentMode = MODE_BREAK;
-    triggerNudge();             // arm wave to celebrate!
+    setPetMood(MOOD_ASLEEP);
+    startNudge();               // celebrate alert (soft nudge / servo)
   }
 }
 
 // ── Per-mode update functions ───────────────────────────────
 void updateIdle() {
-  tickPetAnimation();
-}
-
-void updatePomodoro() {
-  // timer ticks are checked in loop() display logic
+  // Animation tick handled in main refresh decision
 }
 
 void updateBreak() {
@@ -165,8 +210,8 @@ void updateBreak() {
 }
 
 void updateNudge() {
-  tickServoNudge();             // servo wave animation
-  if (!isNudging()) {
+  tickNudge();
+  if (!isNudgeActive()) {
     updatePetMoodFromSessions(getSessionCount());
     currentMode = MODE_IDLE;
   }

@@ -15,34 +15,81 @@
 #include <Arduino.h>
 #include "config.h"
 
-// ── Event type returned by readInput() ──────────────────────
+/*
+ * ============================================================
+ *  Input Module — Button + KY031 Tap (ISR) + Movement Sensor
+ *
+ *  Button (PIN_BUTTON D4, INPUT_PULLUP):
+ *    Polling with debounce / long-press detection.
+ *      • Short press → EVT_BTN_SHORT
+ *      • Long press  → EVT_BTN_LONG
+ *
+ *  KY031 Tap Sensor (PIN_TAP_KY031 D2, INPUT_PULLUP):
+ *    Produces a very brief LOW pulse (~1-5 ms) on each knock.
+ *    Too short for polling — uses attachInterrupt(CHANGE) to
+ *    count falling edges via ISR, then readInput() evaluates
+ *    after DOUBLE_TAP_WINDOW_MS expires:
+ *      • 1 tap   → EVT_TAP
+ *      • 2+ taps → EVT_DOUBLE_TAP  (used to start Pomodoro)
+ *
+ *  Movement Sensor (PIN_MOVEMENT D3, INPUT_PULLUP):
+ *    Polling (signal is long enough). Goes LOW → EVT_MOTION
+ * ============================================================
+ */
+
 enum InputEvent {
   EVT_NONE,
-  EVT_BTN_SHORT,        // released before long-press threshold
-  EVT_BTN_LONG,         // held past BTN_LONG_PRESS_MS
-  EVT_SHAKE             // vibration detected
+  EVT_BTN_SHORT,
+  EVT_BTN_LONG,
+  EVT_TAP,
+  EVT_DOUBLE_TAP,
+  EVT_MOTION
 };
 
-// ── Internal state ──────────────────────────────────────────
-static bool     _btnPrev    = HIGH;
-static uint32_t _btnDownMs  = 0;
-static bool     _btnFired   = false;   // long-press already emitted?
+// ── Button state ────────────────────────────────────────────
+static bool     _lastBtnState   = HIGH;
+static uint32_t _btnPressTime   = 0;
+static bool     _btnHandled     = false;
 
-// ── Public API ──────────────────────────────────────────────
+// ── KY031 ISR state (volatile!) ─────────────────────────────
+#define TAP_DEBOUNCE_MS       60    // ignore edges closer than this
+#define DOUBLE_TAP_WINDOW_MS  400   // max gap between taps for double-tap
+
+static volatile uint32_t _isrTapCount  = 0;
+static volatile uint32_t _isrFirstTap  = 0;
+static volatile uint32_t _isrLastEdge  = 0;
+
+// ISR — fires on CHANGE; we count falling edges (HIGH→LOW = tap start)
+static void _tapISR() {
+  uint32_t now = millis();
+  if (now - _isrLastEdge < TAP_DEBOUNCE_MS) return;   // bounce filter
+  _isrLastEdge = now;
+  // Only count falling edges (pin just went LOW = tap pulse start)
+  if (digitalRead(PIN_TAP_KY031) == LOW) {
+    if (_isrTapCount == 0) _isrFirstTap = now;
+    _isrTapCount++;
+  }
+}
+
+// ── Movement sensor state ───────────────────────────────────
+static uint32_t _lastMotionTime = 0;
+const uint16_t  MOTION_COOLDOWN_MS = 300;
 
 void initInput() {
-  pinMode(PIN_BUTTON,   INPUT_PULLUP);
-  pinMode(PIN_SHAKE_SW, INPUT_PULLUP);
+  pinMode(PIN_BUTTON,    INPUT_PULLUP);
+  pinMode(PIN_TAP_KY031, INPUT_PULLUP);
+  pinMode(PIN_MOVEMENT,  INPUT_PULLUP);
+
+  attachInterrupt(digitalPinToInterrupt(PIN_TAP_KY031), _tapISR, CHANGE);
 }
 
 InputEvent readInput() {
-  /* ─── Button ──────────────────────────────────────────── */
-  bool cur = digitalRead(PIN_BUTTON);
+  // ── Button (polling — pulse is long enough) ─────────────────
+  bool btnState = digitalRead(PIN_BUTTON);
 
-  // Falling edge → record press time
-  if (cur == LOW && _btnPrev == HIGH) {
-    _btnDownMs = millis();
-    _btnFired  = false;
+  if (btnState == LOW && _lastBtnState == HIGH) {
+    _btnPressTime = millis();
+    _btnHandled   = false;
   }
 
   // Still held → check for long press
@@ -63,11 +110,42 @@ InputEvent readInput() {
 
   _btnPrev = cur;
 
-  /* ─── Shake sensor ────────────────────────────────────── */
-  if (digitalRead(PIN_SHAKE_SW) == LOW) {
-    delay(50);                             // debounce
-    if (digitalRead(PIN_SHAKE_SW) == LOW)
-      return EVT_SHAKE;
+  // ── KY031 tap sensor (interrupt-driven) ─────────────────────
+  // ISR counts falling edges. We wait for the double-tap window
+  // to close, then evaluate how many taps were collected.
+  if (_isrTapCount > 0) {
+    noInterrupts();
+    uint32_t firstTap = _isrFirstTap;
+    uint32_t count    = _isrTapCount;
+    interrupts();
+
+    if (millis() - firstTap >= DOUBLE_TAP_WINDOW_MS) {
+      // Window expired — evaluate
+      noInterrupts();
+      _isrTapCount = 0;
+      interrupts();
+
+      if (count >= 2) {
+        Serial.print(F("[Input] DOUBLE TAP ("));
+        Serial.print(count);
+        Serial.println(F(" edges)"));
+        return EVT_DOUBLE_TAP;
+      } else {
+        Serial.println(F("[Input] SINGLE TAP"));
+        return EVT_TAP;
+      }
+    }
+  }
+
+  // ── Movement sensor (polling — signal is long enough) ───────
+  if (digitalRead(PIN_MOVEMENT) == LOW) {
+    if (millis() - _lastMotionTime >= MOTION_COOLDOWN_MS) {
+      delay(15);  // debounce
+      if (digitalRead(PIN_MOVEMENT) == LOW) {
+        _lastMotionTime = millis();
+        return EVT_MOTION;
+      }
+    }
   }
 
   return EVT_NONE;
