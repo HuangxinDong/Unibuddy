@@ -2,7 +2,7 @@
 
 // ── Test Mode ─────────────────────────────────────────────────
 // Uncomment the line below for rapid testing (10s focus / 3s break)
-#define TEST_MODE
+// #define TEST_MODE
 
 // ── E-Paper Display (Waveshare 2.13" V4, 250×122, SPI) ───────
 // Pin mapping defined in epdif.h: RST=D8, DC=D9, CS=D10, BUSY=D7
@@ -27,9 +27,9 @@
   #define LONG_BREAK         (15UL * 60 * 1000)    // 15 min (every 4 sessions)
 #endif
 
-// Button timing
-#define BTN_DEBOUNCE_MS   50
-#define BTN_LONG_PRESS_MS 600
+// Tap sensor timing
+#define TAP_DEBOUNCE_MS       80    // ignore bounces shorter than this
+#define DOUBLE_TAP_WINDOW_MS  400   // max gap between taps for double-tap
 
 // Servo
 #define SERVO_REST_ANGLE  0

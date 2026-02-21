@@ -29,8 +29,10 @@ static Epd epd;
 static unsigned char _framebuf[128 / 8 * 250];   // 4000 bytes
 static Paint paint(_framebuf, 128, 250);          // physical w/h
 
-static int  _partialCount = 0;
-static const int PARTIAL_LIMIT = 30;   // force full refresh after N partials
+static int      _partialCount   = 0;
+static const int PARTIAL_LIMIT  = 30;  // force full refresh after N partials
+static uint32_t _lastRefreshMs  = 0;
+static const uint32_t REFRESH_COOLDOWN_MS = 500;  // min gap between refreshes
 
 // ── Colored constants (e-paper: 0 = black, 1 = white) ──────
 #define COL_BLACK  0
@@ -81,22 +83,41 @@ void showSplashScreen() {
 //  Refresh helpers
 // ════════════════════════════════════════════════════════════
 
-void fullRefresh(int mode) {
+// Deep refresh — full black-white flash, clears all ghosting.
+// Only called on startup and periodically to de-ghost.
+void deepRefresh(int mode) {
   epd.Init(FULL);
   renderToBuffer(mode);
   epd.DisplayPartBaseImage(_framebuf);   // full refresh + set base
   _partialCount = 0;
+  _lastRefreshMs = millis();
 }
 
+// Fast refresh — NO flash, used on mode changes.
+void fullRefresh(int mode) {
+  if (millis() - _lastRefreshMs < REFRESH_COOLDOWN_MS) return;  // cooldown
+  epd.Init(FAST);
+  renderToBuffer(mode);
+  epd.Display_Fast(_framebuf);           // fast full update, no flash
+  // Re-init PART base so subsequent partials work correctly
+  epd.Init(PART);
+  epd.DisplayPartBaseImage(_framebuf);
+  _partialCount = 0;
+  _lastRefreshMs = millis();
+}
+
+// Partial refresh — updates only changed pixels, no flash.
 void partialRefresh(int mode) {
+  if (millis() - _lastRefreshMs < REFRESH_COOLDOWN_MS) return;  // cooldown
   if (_partialCount >= PARTIAL_LIMIT) {
-    fullRefresh(mode);                   // fight ghosting
+    deepRefresh(mode);                   // periodic de-ghost
     return;
   }
   epd.Init(PART);
   renderToBuffer(mode);
   epd.DisplayPart(_framebuf);
   _partialCount++;
+  _lastRefreshMs = millis();
 }
 
 void sleepDisplay() {
@@ -127,7 +148,7 @@ void renderToBuffer(int mode) {
       snprintf(buf, sizeof(buf), "Streak: %d days", getStreakDays());
       paint.DrawStringAt(30, 52, buf, &Font12, COL_BLACK);
 
-      paint.DrawStringAt(20, 90, "Hold button to focus", &Font12, COL_BLACK);
+      paint.DrawStringAt(20, 90, "Double tap to focus", &Font12, COL_BLACK);
       break;
     }
 
@@ -148,7 +169,7 @@ void renderToBuffer(int mode) {
       drawProgressBar(20, 65, 210, 14, progress);
 
       // Hint
-      paint.DrawStringAt(20, 95, "Long press to cancel", &Font12, COL_BLACK);
+      paint.DrawStringAt(20, 95, "Double tap to cancel", &Font12, COL_BLACK);
       break;
     }
 
@@ -164,7 +185,7 @@ void renderToBuffer(int mode) {
       snprintf(buf, sizeof(buf), "Cycle %d done!", getCompletedCycleCount());
       paint.DrawStringAt(30, 65, buf, &Font12, COL_BLACK);
 
-      paint.DrawStringAt(30, 95, "Press to skip", &Font12, COL_BLACK);
+      paint.DrawStringAt(30, 95, "Tap to skip break", &Font12, COL_BLACK);
       break;
     }
 
@@ -196,7 +217,7 @@ void renderToBuffer(int mode) {
       snprintf(buf, sizeof(buf), "Streak:     %d days", getStreakDays());
       paint.DrawStringAt(10, 68, buf, &Font12, COL_BLACK);
 
-      paint.DrawStringAt(10, 100, "Press to go back", &Font12, COL_BLACK);
+      paint.DrawStringAt(10, 100, "Tap to go back", &Font12, COL_BLACK);
       break;
     }
   }
