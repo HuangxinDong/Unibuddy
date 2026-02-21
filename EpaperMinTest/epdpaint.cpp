@@ -118,15 +118,15 @@ void Paint::DrawPixel(int x, int y, int colored) {
           return;
         }
         point_temp = x;
-        x = this->width - y;
+        x = this->width - 1 - y;
         y = point_temp;
         DrawAbsolutePixel(x, y, colored);
     } else if (this->rotate == ROTATE_180) {
         if(x < 0 || x >= this->width || y < 0 || y >= this->height) {
           return;
         }
-        x = this->width - x;
-        y = this->height - y;
+        x = this->width - 1 - x;
+        y = this->height - 1 - y;
         DrawAbsolutePixel(x, y, colored);
     } else if (this->rotate == ROTATE_270) {
         if(x < 0 || x >= this->height || y < 0 || y >= this->width) {
@@ -134,7 +134,7 @@ void Paint::DrawPixel(int x, int y, int colored) {
         }
         point_temp = x;
         x = y;
-        y = this->height - point_temp;
+        y = this->height - 1 - point_temp;
         DrawAbsolutePixel(x, y, colored);
     }
 }

@@ -1,29 +1,22 @@
 /*
  * ============================================================
- *  E-Paper Minimal Test — Waveshare 2.13" V4 (Black/White)
- *  Library: epd2in13_V4 (NOT the B three-color version)
+ *  E-Paper Landscape Test — Waveshare 2.13" V4 (Black/White)
+ *  Library: epd2in13_V4
  *
- *  Wiring (SPI) — per Waveshare wiki for Arduino UNO:
- *    VCC  → 5V
- *    GND  → GND
- *    DIN  → D11 (MOSI)
- *    CLK  → D13 (SCK)
- *    CS   → D10
- *    DC   → D9
- *    RST  → D8
- *    BUSY → D7
+ *  Wiring (SPI):
+ *    VCC→5V  GND→GND  DIN→D11  CLK→D13
+ *    CS→D10  DC→D9  RST→D8  BUSY→D7
  *
  *  What this does:
- *    1. Init in FULL mode, clear screen
- *    2. Draw text using Display1() (4 strip calls)
- *    3. Put display to sleep
+ *    1. Init FULL, clear screen
+ *    2. Draw landscape UI using full 4000-byte framebuffer
+ *       with Paint(128, 250) + ROTATE_270
+ *    3. Demo partial refresh (counter update)
+ *    4. Sleep
  *
- *  Display1() works in 4-strip cycles:
- *    Call 1: starts 0x24 command, sends strip data
- *    Call 2-3: sends strip data
- *    Call 4: sends strip data + triggers refresh
- *  Each strip = bufwidth(16) × bufheight(63) = 1008 bytes
- *  4 strips × 63 rows = 252 rows ≥ 250 (EPD_HEIGHT)
+ *  Landscape coordinate system:
+ *    x: 0 → 249 (left to right)
+ *    y: 0 → 121 (top to bottom)
  * ============================================================
  */
 
@@ -31,76 +24,81 @@
 #include "epd2in13_V4.h"
 #include "epdpaint.h"
 
-#define COLORED     0
-#define UNCOLORED   1
+#define COL_BLACK  0
+#define COL_WHITE  1
 
-// Buffer: matches library's bufwidth(16) × bufheight(63) = 1008 bytes
-unsigned char image[1050];
-
+// Full framebuffer: (128/8) × 250 = 4000 bytes
+unsigned char framebuf[128 / 8 * 250];
+Paint paint(framebuf, 128, 250);    // physical width, height
 Epd epd;
 
 void setup() {
   Serial.begin(115200);
-  Serial.println(F("[EPD Test] Starting..."));
+  Serial.println(F("[Test] Landscape E-Paper Test"));
 
-  // ── Init in FULL refresh mode ───────────────────────────────
+  // Init
   if (epd.Init(FULL) != 0) {
-    Serial.println(F("[EPD Test] Init FAILED! Check wiring:"));
-    Serial.println(F("  VCC->5V  GND->GND  DIN->D11  CLK->D13"));
-    Serial.println(F("  CS->D10  DC->D9  RST->D8  BUSY->D7"));
+    Serial.println(F("[Test] Init FAILED!"));
     while (true);
   }
-  Serial.println(F("[EPD Test] Init OK."));
-
-  // ── Clear entire screen ─────────────────────────────────────
   epd.Clear();
-  Serial.println(F("[EPD Test] Screen cleared."));
+  Serial.println(F("[Test] Init OK, cleared."));
 
-  // ── Paint object: 128 wide × 63 tall (matches bufwidth*8 × bufheight)
-  Paint paint(image, epd.bufwidth * 8, epd.bufheight);
+  // Landscape rotation
+  paint.SetRotate(ROTATE_270);
 
-  // ── Strip 1: text ───────────────────────────────────────────
-  paint.Clear(UNCOLORED);
-  paint.DrawStringAt(2, 4,  "Hello UniBuddy!", &Font16, COLORED);
-  paint.DrawStringAt(2, 28, "E-Paper works!", &Font12, COLORED);
-  paint.DrawStringAt(2, 46, "epd2in13 V4", &Font12, COLORED);
-  epd.Display1(image);
-  Serial.println(F("[EPD Test] Strip 1 sent."));
+  // ── Draw full-screen landscape UI ───────────────────────
+  paint.Clear(COL_WHITE);
 
-  // ── Strip 2: shapes ────────────────────────────────────────
-  paint.Clear(UNCOLORED);
-  paint.DrawRectangle(2, 2, 50, 50, COLORED);
-  paint.DrawLine(2, 2, 50, 50, COLORED);
-  paint.DrawLine(2, 50, 50, 2, COLORED);
-  paint.DrawCircle(90, 25, 20, COLORED);
-  epd.Display1(image);
-  Serial.println(F("[EPD Test] Strip 2 sent."));
+  // Title
+  paint.DrawStringAt(30, 8, "UniBuddy", &Font24, COL_BLACK);
 
-  // ── Strip 3: filled shapes ─────────────────────────────────
-  paint.Clear(UNCOLORED);
-  paint.DrawFilledRectangle(2, 2, 50, 50, COLORED);
-  paint.DrawFilledCircle(90, 25, 20, COLORED);
-  epd.Display1(image);
-  Serial.println(F("[EPD Test] Strip 3 sent."));
+  // Divider
+  paint.DrawHorizontalLine(10, 36, 230, COL_BLACK);
 
-  // ── Strip 4: empty (triggers refresh) ──────────────────────
-  paint.Clear(UNCOLORED);
-  paint.DrawStringAt(2, 20, "Test complete!", &Font16, COLORED);
-  epd.Display1(image);   // 4th call → refresh!
-  Serial.println(F("[EPD Test] Strip 4 sent -> Refreshing!"));
+  // Info text
+  paint.DrawStringAt(10, 44, "Landscape 250x122", &Font16, COL_BLACK);
+  paint.DrawStringAt(10, 66, "E-Paper V4 Test OK", &Font12, COL_BLACK);
 
-  Serial.println(F("[EPD Test] Display should now show 4 strips:"));
-  Serial.println(F("  1: Hello UniBuddy! / E-Paper works! / epd2in13 V4"));
-  Serial.println(F("  2: Rectangle + X / Circle outline"));
-  Serial.println(F("  3: Filled rectangle / Filled circle"));
-  Serial.println(F("  4: Test complete!"));
+  // Shapes
+  paint.DrawRectangle(10, 86, 60, 116, COL_BLACK);             // outlined rect
+  paint.DrawFilledRectangle(70, 86, 120, 116, COL_BLACK);      // filled rect
+  paint.DrawCircle(160, 101, 15, COL_BLACK);                    // circle
+  paint.DrawFilledCircle(210, 101, 15, COL_BLACK);              // filled circle
 
-  // ── Sleep to protect display ────────────────────────────────
+  // Border around entire screen
+  paint.DrawRectangle(0, 0, 249, 121, COL_BLACK);
+
+  // Send to display (full refresh) + set as partial base
+  epd.DisplayPartBaseImage(framebuf);
+  Serial.println(F("[Test] Full refresh done."));
+
   delay(2000);
+
+  // ── Partial refresh demo: update counter ────────────────
+  Serial.println(F("[Test] Partial refresh demo..."));
+  for (int i = 1; i <= 5; i++) {
+    epd.Init(PART);
+
+    // Erase only the counter area (white rectangle)
+    paint.DrawFilledRectangle(10, 44, 230, 80, COL_WHITE);
+
+    // Draw updated text
+    char buf[32];
+    snprintf(buf, sizeof(buf), "Partial #%d of 5", i);
+    paint.DrawStringAt(10, 44, buf, &Font16, COL_BLACK);
+    paint.DrawStringAt(10, 66, "No full flash!", &Font12, COL_BLACK);
+
+    epd.DisplayPart(framebuf);
+    Serial.print(F("[Test] Partial ")); Serial.println(i);
+    delay(2000);
+  }
+
+  // ── Sleep ───────────────────────────────────────────────
   epd.Sleep();
-  Serial.println(F("[EPD Test] Display sleeping. Done."));
+  Serial.println(F("[Test] Done. Display sleeping."));
 }
 
 void loop() {
-  // E-paper retains image without power — nothing to do.
+  // E-paper retains image without power
 }
