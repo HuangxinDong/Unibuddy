@@ -52,7 +52,7 @@ void setup() {
   showSplashScreen();
   delay(2000);               // longer pause — e-paper needs time
 
-  fullRefresh(MODE_IDLE);    // paint IDLE screen as partial-refresh base
+  deepRefresh(MODE_IDLE);    // paint IDLE screen as partial-refresh base (with flash)
   Serial.println(F("[Buddy] Ready!"));
 }
 
@@ -98,7 +98,7 @@ void loop() {
 // Mode Switching
 void handleModeSwitch(InputEvent evt) {
   switch (evt) {
-    case EVT_BTN_LONG:          // long press → toggle pomodoro
+    case EVT_BTN_LONG:          // double tap → toggle pomodoro
       if (currentMode == MODE_IDLE) {
         startPomodoro();
         setPetMood(MOOD_FOCUSED);
@@ -110,7 +110,7 @@ void handleModeSwitch(InputEvent evt) {
       }
       break;
 
-    case EVT_BTN_SHORT:         // short press → cycle stats / break ack
+    case EVT_BTN_SHORT:         // single tap → cycle stats / break ack
       if (currentMode == MODE_BREAK) {
         updatePetMoodFromSessions(getSessionCount());
         currentMode = MODE_IDLE;
