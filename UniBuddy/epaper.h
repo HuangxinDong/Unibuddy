@@ -26,6 +26,17 @@
 #define B  COL_BLACK
 #define W  COL_WHITE
 
+// ── Night mode state ────────────────────────────────────────
+static bool _nightMode = false;
+
+void  setNightMode(bool on) { _nightMode = on; }
+bool  isNightMode()          { return _nightMode; }
+void  toggleNightMode()      { _nightMode = !_nightMode; }
+
+/* dynamic foreground / background for night-aware drawing */
+static inline int FG() { return _nightMode ? W : B; }
+static inline int BG() { return _nightMode ? B : W; }
+
 static Epd epd;
 static unsigned char _fb[128 / 8 * 250];
 static Paint paint(_fb, 128, 250);
@@ -65,7 +76,7 @@ void showSplashScreen() {
   paint.DrawStringAt(42, 50, "Tilt to switch!", &Font16, B);
   paint.DrawStringAt(15, 76,  "Stand -> Pet   Flat -> Sleep", &Font12, B);
   paint.DrawStringAt(15, 92,  "Tilt -> Info   Flip -> Focus", &Font12, B);
-  paint.DrawStringAt(15, 108, "Shake me in Pet mode!", &Font12, B);
+  paint.DrawStringAt(15, 108, "Shake/Tap me! 2xTap->Night", &Font12, B);
   epd.Display(_fb);
 }
 
@@ -96,153 +107,157 @@ void thickLine(int x0, int y0, int x1, int y1, int t, int col) {
   for (int d = -t; d <= t; d++) paint.DrawLine(x0, y0 + d, x1, y1 + d, col);
 }
 
+// ── Night-mode aware drawing helpers ────────────────────────
+// These use FG()/BG() to auto-invert colors in night mode
+
+void nThickHLine(int x, int y, int w, int t) {
+  thickHLine(x, y, w, t, FG());
+}
+void nThickLine(int x0, int y0, int x1, int y1, int t) {
+  thickLine(x0, y0, x1, y1, t, FG());
+}
+
 // ═══════════════════════════════════════════════════════════
 //  Mood-specific eye styles  (all take centre x,y + radius)
 // ═══════════════════════════════════════════════════════════
 
 /* standard open: outline→white→pupil→sparkle */
 void eyeOpen(int cx, int cy, int R, int pR, int8_t pox) {
-  paint.DrawFilledCircle(cx, cy, R, B);
-  paint.DrawFilledCircle(cx, cy, R - 3, W);
-  paint.DrawFilledCircle(cx + pox, cy + 2, pR, B);
-  paint.DrawFilledCircle(cx + pox - pR/3, cy + 2 - pR/3, pR/3 + 1, W);
+  paint.DrawFilledCircle(cx, cy, R, FG());
+  paint.DrawFilledCircle(cx, cy, R - 3, BG());
+  paint.DrawFilledCircle(cx + pox, cy + 2, pR, FG());
+  paint.DrawFilledCircle(cx + pox - pR/3, cy + 2 - pR/3, pR/3 + 1, BG());
 }
 
 /* blink: thin bar */
 void eyeBlink(int cx, int cy, int R) {
-  paint.DrawFilledRectangle(cx - R, cy - 2, cx + R, cy + 2, B);
+  paint.DrawFilledRectangle(cx - R, cy - 2, cx + R, cy + 2, FG());
 }
 
 /* happy ^_^ */
 void eyeHappy(int cx, int cy, int R) {
-  thickLine(cx - R, cy, cx, cy - R*2/3, 2, B);
-  thickLine(cx, cy - R*2/3, cx + R, cy, 2, B);
+  nThickLine(cx - R, cy, cx, cy - R*2/3, 2);
+  nThickLine(cx, cy - R*2/3, cx + R, cy, 2);
 }
 
 /* cute  ⌒‿⌒  (happy arc + sparkle dot above) */
 void eyeCute(int cx, int cy, int R) {
   eyeHappy(cx, cy, R);
-  /* sparkle: two small dots */
-  paint.DrawFilledCircle(cx - R/2, cy - R + 2, 2, B);
-  paint.DrawFilledCircle(cx + R/2, cy - R + 2, 2, B);
+  paint.DrawFilledCircle(cx - R/2, cy - R + 2, 2, FG());
+  paint.DrawFilledCircle(cx + R/2, cy - R + 2, 2, FG());
 }
 
 /* interested: bigger pupil, slightly wider */
 void eyeInterested(int cx, int cy, int R, int8_t pox) {
-  paint.DrawFilledCircle(cx, cy, R, B);
-  paint.DrawFilledCircle(cx, cy, R - 3, W);
+  paint.DrawFilledCircle(cx, cy, R, FG());
+  paint.DrawFilledCircle(cx, cy, R - 3, BG());
   int bigP = R * 2 / 3;
-  paint.DrawFilledCircle(cx + pox, cy + 1, bigP, B);
-  paint.DrawFilledCircle(cx + pox - bigP/3, cy - bigP/4, bigP/3 + 1, W);
+  paint.DrawFilledCircle(cx + pox, cy + 1, bigP, FG());
+  paint.DrawFilledCircle(cx + pox - bigP/3, cy - bigP/4, bigP/3 + 1, BG());
 }
 
 /* bored: half-lid, small pupil off-centre */
 void eyeBored(int cx, int cy, int R) {
-  paint.DrawFilledCircle(cx, cy, R, B);
-  paint.DrawFilledCircle(cx, cy, R - 3, W);
-  /* eyelid covers upper 50% */
-  paint.DrawFilledRectangle(cx - R - 1, cy - R - 1, cx + R + 1, cy, W);
-  thickHLine(cx - R, cy, R * 2, 1, B);
-  paint.DrawFilledCircle(cx + R/3, cy + R/4, R/4, B);  /* small pupil, off-right */
+  paint.DrawFilledCircle(cx, cy, R, FG());
+  paint.DrawFilledCircle(cx, cy, R - 3, BG());
+  paint.DrawFilledRectangle(cx - R - 1, cy - R - 1, cx + R + 1, cy, BG());
+  nThickHLine(cx - R, cy, R * 2, 1);
+  paint.DrawFilledCircle(cx + R/3, cy + R/4, R/4, FG());
 }
 
 /* surprised  O_O: extra wide, tiny far-apart pupils */
 void eyeSurprised(int cx, int cy, int R) {
   int bigR = R + 4;
-  paint.DrawFilledCircle(cx, cy, bigR, B);
-  paint.DrawFilledCircle(cx, cy, bigR - 3, W);
-  paint.DrawFilledCircle(cx, cy, R/3, B);
-  paint.DrawFilledCircle(cx - 2, cy - 2, 2, W);
+  paint.DrawFilledCircle(cx, cy, bigR, FG());
+  paint.DrawFilledCircle(cx, cy, bigR - 3, BG());
+  paint.DrawFilledCircle(cx, cy, R/3, FG());
+  paint.DrawFilledCircle(cx - 2, cy - 2, 2, BG());
 }
 
 /* worried: slightly droopy, brow line angled down-inward */
 void eyeWorried(int cx, int cy, int R, bool isLeft) {
-  paint.DrawFilledCircle(cx, cy, R, B);
-  paint.DrawFilledCircle(cx, cy, R - 3, W);
-  paint.DrawFilledCircle(cx, cy + 2, R/3, B);
-  paint.DrawFilledCircle(cx - 1, cy, 2, W);
-  /* worried brow */
+  paint.DrawFilledCircle(cx, cy, R, FG());
+  paint.DrawFilledCircle(cx, cy, R - 3, BG());
+  paint.DrawFilledCircle(cx, cy + 2, R/3, FG());
+  paint.DrawFilledCircle(cx - 1, cy, 2, BG());
   if (isLeft)
-    thickLine(cx - R, cy - R - 4, cx + R/2, cy - R + 2, 1, B);
+    nThickLine(cx - R, cy - R - 4, cx + R/2, cy - R + 2, 1);
   else
-    thickLine(cx - R/2, cy - R + 2, cx + R, cy - R - 4, 1, B);
+    nThickLine(cx - R/2, cy - R + 2, cx + R, cy - R - 4, 1);
 }
 
 /* annoyed  >_< */
 void eyeAnnoyed(int cx, int cy, int R) {
-  thickLine(cx - R, cy - R/2, cx, cy, 2, B);
-  thickLine(cx, cy, cx + R, cy - R/2, 2, B);
-  thickLine(cx - R, cy + R/2, cx, cy, 2, B);
-  thickLine(cx, cy, cx + R, cy + R/2, 2, B);
+  nThickLine(cx - R, cy - R/2, cx, cy, 2);
+  nThickLine(cx, cy, cx + R, cy - R/2, 2);
+  nThickLine(cx - R, cy + R/2, cx, cy, 2);
+  nThickLine(cx, cy, cx + R, cy + R/2, 2);
 }
 
 /* dizzy  @_@: spiral-like concentric rings */
 void eyeDizzy(int cx, int cy, int R) {
-  paint.DrawCircle(cx, cy, R, B);
-  paint.DrawCircle(cx, cy, R * 2 / 3, B);
-  paint.DrawCircle(cx, cy, R / 3, B);
-  paint.DrawFilledCircle(cx, cy, 3, B);
+  paint.DrawCircle(cx, cy, R, FG());
+  paint.DrawCircle(cx, cy, R * 2 / 3, FG());
+  paint.DrawCircle(cx, cy, R / 3, FG());
+  paint.DrawFilledCircle(cx, cy, 3, FG());
 }
 
 /* sad: droopy outline + small pupil low */
 void eyeSad(int cx, int cy, int R) {
-  paint.DrawFilledCircle(cx, cy, R, B);
-  paint.DrawFilledCircle(cx, cy, R - 3, W);
-  /* droopy top: erase top-outer corner+ redraw arc */
-  paint.DrawFilledRectangle(cx - R - 1, cy - R - 1, cx + R + 1, cy - R/2, W);
-  thickLine(cx - R, cy - R/3, cx + R, cy - R/2, 1, B);
-  paint.DrawFilledCircle(cx, cy + R/4, R/4, B);
-  paint.DrawFilledCircle(cx - 1, cy + R/4 - 2, 2, W);
+  paint.DrawFilledCircle(cx, cy, R, FG());
+  paint.DrawFilledCircle(cx, cy, R - 3, BG());
+  paint.DrawFilledRectangle(cx - R - 1, cy - R - 1, cx + R + 1, cy - R/2, BG());
+  nThickLine(cx - R, cy - R/3, cx + R, cy - R/2, 1);
+  paint.DrawFilledCircle(cx, cy + R/4, R/4, FG());
+  paint.DrawFilledCircle(cx - 1, cy + R/4 - 2, 2, BG());
 }
 
 /* angry: V brows + sharp pupil */
 void eyeAngry(int cx, int cy, int R, bool isLeft) {
-  paint.DrawFilledCircle(cx, cy, R, B);
-  paint.DrawFilledCircle(cx, cy, R - 3, W);
-  paint.DrawFilledCircle(cx, cy + 2, R/3 + 1, B);
-  /* V brow */
+  paint.DrawFilledCircle(cx, cy, R, FG());
+  paint.DrawFilledCircle(cx, cy, R - 3, BG());
+  paint.DrawFilledCircle(cx, cy + 2, R/3 + 1, FG());
   if (isLeft)
-    thickLine(cx - R, cy - R + 6, cx + R/2, cy - R - 2, 2, B);
+    nThickLine(cx - R, cy - R + 6, cx + R/2, cy - R - 2, 2);
   else
-    thickLine(cx - R/2, cy - R - 2, cx + R, cy - R + 6, 2, B);
+    nThickLine(cx - R/2, cy - R - 2, cx + R, cy - R + 6, 2);
 }
 
 /* confused: one brow up, one down */
 void eyeConfused(int cx, int cy, int R, bool isLeft) {
-  paint.DrawFilledCircle(cx, cy, R, B);
-  paint.DrawFilledCircle(cx, cy, R - 3, W);
-  paint.DrawFilledCircle(cx, cy + 1, R/3, B);
-  paint.DrawFilledCircle(cx - 1, cy - 1, 2, W);
+  paint.DrawFilledCircle(cx, cy, R, FG());
+  paint.DrawFilledCircle(cx, cy, R - 3, BG());
+  paint.DrawFilledCircle(cx, cy + 1, R/3, FG());
+  paint.DrawFilledCircle(cx - 1, cy - 1, 2, BG());
   if (isLeft)
-    thickLine(cx - R, cy - R - 2, cx + R/2, cy - R + 4, 1, B);
+    nThickLine(cx - R, cy - R - 2, cx + R/2, cy - R + 4, 1);
   else
-    thickLine(cx - R/2, cy - R + 4, cx + R, cy - R - 6, 1, B);
+    nThickLine(cx - R/2, cy - R + 4, cx + R, cy - R - 6, 1);
 }
 
 /* focused: squinted half-circle */
 void eyeFocused(int cx, int cy, int R, int pR) {
-  paint.DrawFilledCircle(cx, cy, R, B);
-  paint.DrawFilledCircle(cx, cy, R - 2, W);
-  paint.DrawFilledRectangle(cx - R - 1, cy - R - 1, cx + R + 1, cy - R/3, W);
-  thickHLine(cx - R, cy - R/3, R * 2, 1, B);
-  paint.DrawFilledCircle(cx, cy + 2, pR, B);
-  paint.DrawFilledCircle(cx - pR/4, cy + 1 - pR/4, pR/4 + 1, W);
+  paint.DrawFilledCircle(cx, cy, R, FG());
+  paint.DrawFilledCircle(cx, cy, R - 2, BG());
+  paint.DrawFilledRectangle(cx - R - 1, cy - R - 1, cx + R + 1, cy - R/3, BG());
+  nThickHLine(cx - R, cy - R/3, R * 2, 1);
+  paint.DrawFilledCircle(cx, cy + 2, pR, FG());
+  paint.DrawFilledCircle(cx - pR/4, cy + 1 - pR/4, pR/4 + 1, BG());
 }
 
 /* tired: heavy lids */
 void eyeTired(int cx, int cy, int R) {
-  paint.DrawFilledCircle(cx, cy, R, B);
-  paint.DrawFilledCircle(cx, cy, R - 3, W);
-  /* heavy eyelid covers upper 60% */
-  paint.DrawFilledRectangle(cx - R - 1, cy - R - 1, cx + R + 1, cy + R/6, W);
-  thickHLine(cx - R, cy + R/6, R * 2, 1, B);
-  paint.DrawFilledCircle(cx, cy + R/3, R/4, B);
+  paint.DrawFilledCircle(cx, cy, R, FG());
+  paint.DrawFilledCircle(cx, cy, R - 3, BG());
+  paint.DrawFilledRectangle(cx - R - 1, cy - R - 1, cx + R + 1, cy + R/6, BG());
+  nThickHLine(cx - R, cy + R/6, R * 2, 1);
+  paint.DrawFilledCircle(cx, cy + R/3, R/4, FG());
 }
 
 /* asleep: gentle closed curves */
 void eyeAsleep(int cx, int cy, int R) {
-  thickLine(cx - R, cy, cx, cy + 4, 1, B);
-  thickLine(cx, cy + 4, cx + R, cy, 1, B);
+  nThickLine(cx - R, cy, cx, cy + 4, 1);
+  nThickLine(cx, cy + 4, cx + R, cy, 1);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -254,6 +269,7 @@ void drawEyePair(int lx, int rx, int ey, int R, int pR) {
   int8_t  pox   = getPetEyeOffsetX();
   uint8_t blink = getPetBlinkLevel();
   bool    spec  = isPetSpecialPhase();
+  int fg = FG();
 
   /* always blink on phase 3, regardless of mood */
   if (blink == 2) {
@@ -285,10 +301,10 @@ void drawEyePair(int lx, int rx, int ey, int R, int pR) {
     case MOOD_CUTE:
       eyeOpen(lx, ey, R, pR, pox); eyeOpen(rx, ey, R, pR, pox);
       /* blush dots under eyes */
-      paint.DrawFilledCircle(lx - R/2, ey + R + 4, 3, B);
-      paint.DrawFilledCircle(lx + R/2, ey + R + 4, 3, B);
-      paint.DrawFilledCircle(rx - R/2, ey + R + 4, 3, B);
-      paint.DrawFilledCircle(rx + R/2, ey + R + 4, 3, B);
+      paint.DrawFilledCircle(lx - R/2, ey + R + 4, 3, fg);
+      paint.DrawFilledCircle(lx + R/2, ey + R + 4, 3, fg);
+      paint.DrawFilledCircle(rx - R/2, ey + R + 4, 3, fg);
+      paint.DrawFilledCircle(rx + R/2, ey + R + 4, 3, fg);
       break;
     case MOOD_INTERESTED:
       eyeInterested(lx, ey, R, pox); eyeInterested(rx, ey, R, pox); break;
@@ -326,93 +342,91 @@ void drawEyePair(int lx, int rx, int ey, int R, int pR) {
 
 /* small heart shape at (cx, cy) */
 void drawHeart(int cx, int cy, int s) {
-  paint.DrawFilledCircle(cx - s, cy, s, B);
-  paint.DrawFilledCircle(cx + s, cy, s, B);
-  /* V bottom */
+  int fg = FG();
+  paint.DrawFilledCircle(cx - s, cy, s, fg);
+  paint.DrawFilledCircle(cx + s, cy, s, fg);
   for (int row = 0; row <= s * 2; row++) {
-    int hw = s * 2 - row;  /* half-width narrows */
+    int hw = s * 2 - row;
     if (hw < 0) hw = 0;
-    paint.DrawHorizontalLine(cx - hw, cy + row, hw * 2 + 1, B);
+    paint.DrawHorizontalLine(cx - hw, cy + row, hw * 2 + 1, fg);
   }
 }
 
 /* manga anger cross ╳ at (cx, cy) */
 void drawAngerMark(int cx, int cy, int s) {
-  thickLine(cx - s, cy - s, cx + s, cy + s, 1, B);
-  thickLine(cx + s, cy - s, cx - s, cy + s, 1, B);
+  nThickLine(cx - s, cy - s, cx + s, cy + s, 1);
+  nThickLine(cx + s, cy - s, cx - s, cy + s, 1);
 }
 
 /* sweat drop at (cx, cy) */
 void drawSweatDrop(int cx, int cy, int s) {
-  paint.DrawFilledCircle(cx, cy + s, s, B);
-  paint.DrawLine(cx, cy - s, cx - s, cy + s, B);
-  paint.DrawLine(cx, cy - s, cx + s, cy + s, B);
+  int fg = FG();
+  paint.DrawFilledCircle(cx, cy + s, s, fg);
+  paint.DrawLine(cx, cy - s, cx - s, cy + s, fg);
+  paint.DrawLine(cx, cy - s, cx + s, cy + s, fg);
 }
 
 /* sparkle ✦ four-pointed star */
 void drawSparkle(int cx, int cy, int s) {
-  paint.DrawLine(cx, cy - s, cx, cy + s, B);
-  paint.DrawLine(cx - s, cy, cx + s, cy, B);
-  paint.DrawFilledCircle(cx, cy, s/3, B);
+  int fg = FG();
+  paint.DrawLine(cx, cy - s, cx, cy + s, fg);
+  paint.DrawLine(cx - s, cy, cx + s, cy, fg);
+  paint.DrawFilledCircle(cx, cy, s/3, fg);
 }
 
 /* spiral @ */
 void drawSpiral(int cx, int cy, int R) {
-  paint.DrawCircle(cx, cy, R, B);
-  paint.DrawCircle(cx, cy, R * 2/3, B);
-  paint.DrawCircle(cx + 2, cy - 1, R/3, B);
+  int fg = FG();
+  paint.DrawCircle(cx, cy, R, fg);
+  paint.DrawCircle(cx, cy, R * 2/3, fg);
+  paint.DrawCircle(cx + 2, cy - 1, R/3, fg);
 }
 
 void drawMoodSymbol(int rx, int ey, int R) {
   PetMood mood = getPetMood();
-  int sx = rx + R + 8;    /* symbol to the right of right eye */
+  int sx = rx + R + 8;
   int sy = ey - R/2;
+  int fg = FG();
 
   switch (mood) {
     case MOOD_HAPPY:
-      break;  /* eyes alone are enough */
+      break;
     case MOOD_CUTE:
-      /* two small sparkles */
       drawSparkle(sx,     sy - 4, 5);
       drawSparkle(sx + 14, sy + 2, 4);
       break;
     case MOOD_SURPRISED:
-      /* !! exclamation marks */
-      paint.DrawFilledRectangle(sx, sy - 6, sx + 3, sy + 6, B);
-      paint.DrawFilledCircle(sx + 1, sy + 10, 2, B);
-      paint.DrawFilledRectangle(sx + 8, sy - 6, sx + 11, sy + 6, B);
-      paint.DrawFilledCircle(sx + 9, sy + 10, 2, B);
+      paint.DrawFilledRectangle(sx, sy - 6, sx + 3, sy + 6, fg);
+      paint.DrawFilledCircle(sx + 1, sy + 10, 2, fg);
+      paint.DrawFilledRectangle(sx + 8, sy - 6, sx + 11, sy + 6, fg);
+      paint.DrawFilledCircle(sx + 9, sy + 10, 2, fg);
       break;
     case MOOD_WORRIED:
-      drawSweatDrop(sx + 4, sy, 4);  /* 💧 */
+      drawSweatDrop(sx + 4, sy, 4);
       break;
     case MOOD_ANNOYED:
-      drawAngerMark(sx + 4, sy, 6);  /* ╳ */
+      drawAngerMark(sx + 4, sy, 6);
       break;
     case MOOD_ANGRY:
-      /* double anger marks */
       drawAngerMark(sx,      sy - 4, 5);
       drawAngerMark(sx + 14, sy + 2, 4);
       break;
     case MOOD_DIZZY:
-      break;  /* spiral eyes are enough */
+      break;
     case MOOD_SAD:
-      /* teardrop under right eye */
       drawSweatDrop(rx + R/2, ey + R + 4, 3);
       break;
     case MOOD_CONFUSED:
-      /* ? mark using shapes */
-      paint.DrawCircle(sx + 4, sy - 2, 5, B);
-      paint.DrawFilledRectangle(sx + 7, sy - 2, sx + 9, sy + 6, B);
-      paint.DrawFilledCircle(sx + 8, sy + 10, 2, B);
+      paint.DrawCircle(sx + 4, sy - 2, 5, fg);
+      paint.DrawFilledRectangle(sx + 7, sy - 2, sx + 9, sy + 6, fg);
+      paint.DrawFilledCircle(sx + 8, sy + 10, 2, fg);
       break;
     case MOOD_TIRED:
-      /* small zzz */
-      paint.DrawStringAt(sx, sy - 4, "z", &Font8, B);
-      paint.DrawStringAt(sx + 8, sy - 10, "z", &Font12, B);
+      paint.DrawStringAt(sx, sy - 4, "z", &Font8, fg);
+      paint.DrawStringAt(sx + 8, sy - 10, "z", &Font12, fg);
       break;
     default:
-      break;  /* neutral / focused / asleep / bored / interested: no symbol */
+      break;
   }
 }
 
@@ -421,9 +435,33 @@ void drawMoodSymbol(int rx, int ey, int R) {
 // ═══════════════════════════════════════════════════════════
 
 void drawPetFace() {
-  /* eyes centred vertically on 122px screen */
   const int LX = 78, RX = 172, EY = 52;
   const int R = 32, PR = 14;
+
+  if (_nightMode) {
+    /* ── Night sky decorations ───────────────────────── */
+    int fg = FG();
+
+    /* crescent moon (top-left) */
+    paint.DrawFilledCircle(30, 22, 14, fg);
+    paint.DrawFilledCircle(38, 16, 12, BG());  // shadow bite
+
+    /* scattered stars (small sparkles) */
+    drawSparkle(8,   8,   3);
+    drawSparkle(55,  5,   2);
+    drawSparkle(110, 10,  3);
+    drawSparkle(210, 6,   2);
+    drawSparkle(235, 18,  3);
+    drawSparkle(18,  105, 2);
+    drawSparkle(240, 100, 2);
+
+    /* tiny star dots */
+    paint.DrawFilledCircle(70,  14, 1, fg);
+    paint.DrawFilledCircle(150,  8, 1, fg);
+    paint.DrawFilledCircle(180, 15, 1, fg);
+    paint.DrawFilledCircle(45, 108, 1, fg);
+    paint.DrawFilledCircle(200, 105, 1, fg);
+  }
 
   drawEyePair(LX, RX, EY, R, PR);
   drawMoodSymbol(RX, EY, R);
@@ -436,6 +474,7 @@ void drawPetFace() {
 void drawSleepFace() {
   const int LX = 78, RX = 172, EY = 52;
   const int R = 28;
+  int fg = FG();
 
   eyeAsleep(LX, EY, R);
   eyeAsleep(RX, EY, R);
@@ -447,9 +486,19 @@ void drawSleepFace() {
   }
   int bx = 188 + _sleepFrame * 5;
   int by = 36  - _sleepFrame * 3;
-  paint.DrawStringAt(bx,      by,      "z", &Font12, B);
-  paint.DrawStringAt(bx + 12, by - 10, "z", &Font16, B);
-  paint.DrawStringAt(bx + 26, by - 22, "z", &Font20, B);
+  paint.DrawStringAt(bx,      by,      "z", &Font12, fg);
+  paint.DrawStringAt(bx + 12, by - 10, "z", &Font16, fg);
+  paint.DrawStringAt(bx + 26, by - 22, "z", &Font20, fg);
+
+  /* night mode: add stars around sleeping face */
+  if (_nightMode) {
+    drawSparkle(20,  18, 3);
+    drawSparkle(50,   8, 2);
+    drawSparkle(230, 12, 3);
+    drawSparkle(15, 100, 2);
+    paint.DrawFilledCircle(100, 10, 1, fg);
+    paint.DrawFilledCircle(200,  6, 1, fg);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -458,48 +507,49 @@ void drawSleepFace() {
 
 void drawTempCalPortrait() {
   updateCalendarReadings();
+  int fg = FG();
   int tempI = isnan(_tempC) ? 0 : (int)_tempC;
   int tempF = isnan(_tempC) ? 0 : (int)(fabs(_tempC - tempI) * 10.0f);
   int hum = isnan(_humPct) ? 0 : (int)(_humPct + 0.5f);
   if (hum < 0) hum = 0;
   if (hum > 100) hum = 100;
 
-  paint.DrawStringAt(10, 8,  _dayBuf, &Font12, B);
-  paint.DrawStringAt(10, 26, _dateBuf, &Font12, B);
-  paint.DrawHorizontalLine(4, 44, 114, B);
+  paint.DrawStringAt(10, 8,  _dayBuf, &Font12, fg);
+  paint.DrawStringAt(10, 26, _dateBuf, &Font12, fg);
+  paint.DrawHorizontalLine(4, 44, 114, fg);
 
-  paint.DrawStringAt(10, 54, _timeBuf, &Font24, B);
-  paint.DrawHorizontalLine(4, 88, 114, B);
+  paint.DrawStringAt(10, 54, _timeBuf, &Font24, fg);
+  paint.DrawHorizontalLine(4, 88, 114, fg);
 
-  paint.DrawStringAt(6, 96, "Temperature", &Font12, B);
+  paint.DrawStringAt(6, 96, "Temperature", &Font12, fg);
   {
     char buf[16];
     snprintf(buf, sizeof(buf), "%d.%d", tempI, tempF);
-    paint.DrawStringAt(6, 114, buf, &Font24, B);
+    paint.DrawStringAt(6, 114, buf, &Font24, fg);
     int tx = 6 + 17 * (int)strlen(buf);
-    paint.DrawCircle(tx + 3, 116, 2, B);
-    paint.DrawStringAt(tx + 8, 114, "C", &Font24, B);
+    paint.DrawCircle(tx + 3, 116, 2, fg);
+    paint.DrawStringAt(tx + 8, 114, "C", &Font24, fg);
   }
 
   int barW = 100;
-  paint.DrawRectangle(6, 146, 6 + barW, 158, B);
+  paint.DrawRectangle(6, 146, 6 + barW, 158, fg);
   int fill = (int)(barW * (tempI + tempF / 10.0f) / 45.0f);
   if (fill > barW) fill = barW;
-  if (fill > 0) paint.DrawFilledRectangle(6, 146, 6 + fill, 158, B);
+  if (fill > 0) paint.DrawFilledRectangle(6, 146, 6 + fill, 158, fg);
 
-  paint.DrawHorizontalLine(4, 168, 114, B);
-  paint.DrawStringAt(6, 176, "Humidity", &Font12, B);
+  paint.DrawHorizontalLine(4, 168, 114, fg);
+  paint.DrawStringAt(6, 176, "Humidity", &Font12, fg);
   {
     char buf[8];
     snprintf(buf, sizeof(buf), "%d%%", hum);
-    paint.DrawStringAt(6, 194, buf, &Font24, B);
+    paint.DrawStringAt(6, 194, buf, &Font24, fg);
   }
 
-  paint.DrawRectangle(6, 224, 6 + barW, 236, B);
+  paint.DrawRectangle(6, 224, 6 + barW, 236, fg);
   int hfill = barW * hum / 100;
-  if (hfill > 0) paint.DrawFilledRectangle(6, 224, 6 + hfill, 236, B);
+  if (hfill > 0) paint.DrawFilledRectangle(6, 224, 6 + hfill, 236, fg);
 
-  paint.DrawStringAt(20, 244, "UniBuddy", &Font8, B);
+  paint.DrawStringAt(20, 244, "UniBuddy", &Font8, fg);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -516,12 +566,11 @@ void drawTempCalPortrait() {
 // ═══════════════════════════════════════════════════════════
 
 void drawFocusScreen() {
-  /* --- focused eyes with subtle drift --- */
   const int EL = 78, ER = 172, EY = 26;
   const int R = 22, PR = 9;
   uint8_t blink = getPetBlinkLevel();
+  int fg = FG(), bg = BG();
 
-  /* slow pupil drift: oscillates +/-2px every ~8 seconds */
   static const int8_t _drift[] = {0, 1, 2, 1, 0, -1, -2, -1};
   int8_t pdx = _drift[(millis() / 1000) % 8];
 
@@ -529,59 +578,52 @@ void drawFocusScreen() {
     eyeBlink(EL, EY, R);
     eyeBlink(ER, EY, R);
   } else {
-    /* draw both focused eyes with drift */
     int exs[2] = {EL, ER};
     for (int i = 0; i < 2; i++) {
       int cx = exs[i];
-      paint.DrawFilledCircle(cx, EY, R, B);
-      paint.DrawFilledCircle(cx, EY, R - 2, W);
-      paint.DrawFilledRectangle(cx - R - 1, EY - R - 1, cx + R + 1, EY - R/3, W);
-      thickHLine(cx - R, EY - R/3, R * 2, 1, B);
-      paint.DrawFilledCircle(cx + pdx, EY + 2, PR, B);
-      paint.DrawFilledCircle(cx + pdx - PR/4, EY + 1 - PR/4, PR/4 + 1, W);
+      paint.DrawFilledCircle(cx, EY, R, fg);
+      paint.DrawFilledCircle(cx, EY, R - 2, bg);
+      paint.DrawFilledRectangle(cx - R - 1, EY - R - 1, cx + R + 1, EY - R/3, bg);
+      nThickHLine(cx - R, EY - R/3, R * 2, 1);
+      paint.DrawFilledCircle(cx + pdx, EY + 2, PR, fg);
+      paint.DrawFilledCircle(cx + pdx - PR/4, EY + 1 - PR/4, PR/4 + 1, bg);
     }
   }
 
-  /* --- progress bar (no divider) --- */
+  /* --- progress bar --- */
   uint32_t sLeft = pomodoroSecondsLeft();
   float progress = 1.0f - (float)sLeft / (POMODORO_DURATION / 1000.0f);
   if (progress < 0) progress = 0;
   if (progress > 1) progress = 1;
   int barX = 16, barY = 54, barW = 218, barH = 12;
-  paint.DrawRectangle(barX, barY, barX + barW, barY + barH, B);
+  paint.DrawRectangle(barX, barY, barX + barW, barY + barH, fg);
   int fw = (int)(barW * progress);
   if (fw > 0)
     paint.DrawFilledRectangle(barX + 1, barY + 1,
-                              barX + fw, barY + barH - 1, B);
+                              barX + fw, barY + barH - 1, fg);
 
-  /* --- time below progress bar --- */
+  /* --- time --- */
   int mn = sLeft / 60, sc = sLeft % 60;
   char timeBuf[8];
   snprintf(timeBuf, sizeof(timeBuf), "%02d:%02d", mn, sc);
-  paint.DrawStringAt(84, 72, timeBuf, &Font24, B);
+  paint.DrawStringAt(84, 72, timeBuf, &Font24, fg);
 
-  /* --- bottom row: closer to bottom margin --- */
+  /* --- bottom row --- */
   uint8_t sess = getSessionCount();
-  int by = 110;   /* Font12 occupies by..by+12 → 110..122 */
-
-  /* "Session N" at bottom-left */
+  int by = 110;
   {
     char sb[16];
     snprintf(sb, sizeof(sb), "Session %d", sess + 1);
-    paint.DrawStringAt(6, by, sb, &Font12, B);
+    paint.DrawStringAt(6, by, sb, &Font12, fg);
   }
-
-  /* session dots after label */
   for (int i = 0; i < 4; i++) {
     int dotX = 110 + i * 14;
     if ((int)i < (int)(sess % 4))
-      paint.DrawFilledCircle(dotX, by + 6, 4, B);
+      paint.DrawFilledCircle(dotX, by + 6, 4, fg);
     else
-      paint.DrawCircle(dotX, by + 6, 4, B);
+      paint.DrawCircle(dotX, by + 6, 4, fg);
   }
-
-  /* "FOCUS" at bottom-right */
-  paint.DrawStringAt(194, by, "FOCUS", &Font12, B);
+  paint.DrawStringAt(194, by, "FOCUS", &Font12, fg);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -589,19 +631,20 @@ void drawFocusScreen() {
 // ═══════════════════════════════════════════════════════════
 
 void drawBreakScreen() {
-  paint.DrawStringAt(52, 4, "BREAK TIME", &Font20, B);
-  paint.DrawHorizontalLine(4, 28, 242, B);
+  int fg = FG();
+  paint.DrawStringAt(52, 4, "BREAK TIME", &Font20, fg);
+  paint.DrawHorizontalLine(4, 28, 242, fg);
 
   uint32_t sLeft = breakSecondsLeft();
   int mn = sLeft / 60, sc = sLeft % 60;
   char timeBuf[8];
   snprintf(timeBuf, sizeof(timeBuf), "%02d:%02d", mn, sc);
-  paint.DrawStringAt(70, 36, timeBuf, &Font24, B);
+  paint.DrawStringAt(70, 36, timeBuf, &Font24, fg);
 
   {
     char buf[24];
     snprintf(buf, sizeof(buf), "Cycle %d done!", getCompletedCycleCount());
-    paint.DrawStringAt(60, 72, buf, &Font12, B);
+    paint.DrawStringAt(60, 72, buf, &Font12, fg);
   }
 
   eyeHappy(80, 100, 16);
@@ -613,7 +656,7 @@ void drawBreakScreen() {
 // ═══════════════════════════════════════════════════════════
 
 void renderToBuffer(int mode) {
-  paint.Clear(W);
+  paint.Clear(BG());
   switch (mode) {
     case MODE_PET:        drawPetFace();       break;
     case MODE_SLEEP:      drawSleepFace();     break;
