@@ -25,7 +25,8 @@ enum AppMode {
 #define PIN_BUTTON        4
 #define PIN_TAP_KY031     2
 #define PIN_MOVEMENT      3
-#define USE_SERVO_NUDGE   0
+#define PIN_SERVO         6
+#define USE_SERVO_NUDGE   1
 
 // ── Display ─────────────────────────────────────────────────
 #define DISPLAY_WIDTH     250     // landscape
@@ -53,8 +54,9 @@ enum AppMode {
 #define TILT_ROLL_POMO         70.0f   //  >  70 = POMODORO
 #define TILT_ROLL_SLEEP_LO    -35.0f   // -35..35 = SLEEP (wider)
 #define TILT_ROLL_SLEEP_HI     35.0f
-#define TILT_ROLL_CAL_LO      -65.0f   // -65..-35 = TEMPTIME_L (narrower)
-#define TILT_ROLL_CAL_HI       65.0f   //  35..65 = TEMPTIME_R (narrower)
+#define TILT_CAL_PITCH_CENTER  90.0f   // calendar at side orientation
+#define TILT_CAL_PITCH_WINDOW  25.0f   // ±25° around ±90°
+#define TILT_CAL_HYSTERESIS     7.0f
 #define TILT_HYSTERESIS        10.0f   // extra margin to LEAVE current mode
 #define TILT_FACEDOWN_Z       -0.5f
 #define TILT_DEBOUNCE_COUNT    5

@@ -107,11 +107,27 @@ bool isTiltReliable() {
  */
 AppMode classifyTilt(AppMode cur) {
   float r  = _tRoll;
+  float p  = _tPitch;
   float az = _tAccZ;
   float H  = TILT_HYSTERESIS;   // 10° extra to leave current mode
+  float calEnterLo = TILT_CAL_PITCH_CENTER - TILT_CAL_PITCH_WINDOW;
+  float calEnterHi = TILT_CAL_PITCH_CENTER + TILT_CAL_PITCH_WINDOW;
+  float calLeaveLo = calEnterLo - TILT_CAL_HYSTERESIS;
+  float calLeaveHi = calEnterHi + TILT_CAL_HYSTERESIS;
+
+  bool inCalPosEnter = (p >= calEnterLo && p <= calEnterHi);
+  bool inCalNegEnter = (p <= -calEnterLo && p >= -calEnterHi);
+  bool inCalPosLeave = (p >= calLeaveLo && p <= calLeaveHi);
+  bool inCalNegLeave = (p <= -calLeaveLo && p >= -calLeaveHi);
 
   // face-down always takes priority
   if (az < TILT_FACEDOWN_Z)  return MODE_FACEDOWN;
+
+  // --- CALENDAR zones: only around y-axis side orientation (±90 pitch) ---
+  if (cur == MODE_TEMPTIME_L && inCalNegLeave) return MODE_TEMPTIME_L;
+  if (cur == MODE_TEMPTIME_R && inCalPosLeave) return MODE_TEMPTIME_R;
+  if (inCalNegEnter) return MODE_TEMPTIME_L;
+  if (inCalPosEnter) return MODE_TEMPTIME_R;
 
   // --- PET (roll < -70) with hysteresis ---
   if (cur == MODE_PET) {
@@ -137,20 +153,6 @@ AppMode classifyTilt(AppMode cur) {
   } else {
     if (r > TILT_ROLL_SLEEP_LO && r < TILT_ROLL_SLEEP_HI)
       return MODE_SLEEP;
-  }
-
-  // --- CALENDAR zones (narrower: -65..-35 and 35..65) ---
-  if (cur == MODE_TEMPTIME_L) {
-    // stay until roll leaves range + hysteresis
-    if (r > TILT_ROLL_PET && r < TILT_ROLL_SLEEP_LO + H) return MODE_TEMPTIME_L;
-  } else {
-    if (r >= TILT_ROLL_CAL_LO && r <= TILT_ROLL_SLEEP_LO) return MODE_TEMPTIME_L;
-  }
-
-  if (cur == MODE_TEMPTIME_R) {
-    if (r < TILT_ROLL_POMO && r > TILT_ROLL_SLEEP_HI - H) return MODE_TEMPTIME_R;
-  } else {
-    if (r <= TILT_ROLL_CAL_HI && r >= TILT_ROLL_SLEEP_HI) return MODE_TEMPTIME_R;
   }
 
   // fallback: stay in current mode if nothing else matched

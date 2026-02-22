@@ -10,12 +10,26 @@
  */
 
 #include <SPI.h>
+#include <Wire.h>
+#include <math.h>
 #include "config.h"
 #include "epd2in13_V4.h"
 #include "epdpaint.h"
 #include "pet.h"
 #include "pomodoro.h"
 #include "behaviour.h"
+#include "Modulino.h"
+
+#if defined(__has_include)
+  #if __has_include(<RTClib.h>)
+    #include <RTClib.h>
+    #define HAS_RTC_LIB 1
+  #else
+    #define HAS_RTC_LIB 0
+  #endif
+#else
+  #define HAS_RTC_LIB 0
+#endif
 
 #define COL_BLACK  0
 #define COL_WHITE  1
@@ -31,6 +45,69 @@ static const int PARTIAL_LIMIT = 30;
 
 static uint8_t  _sleepFrame  = 0;
 static uint32_t _sleepTimer  = 0;
+
+static ModulinoThermo _thermo;
+static bool _thermoReady = false;
+
+#if HAS_RTC_LIB
+static RTC_DS1307 _rtc;
+#endif
+static bool _rtcReady = false;
+static uint32_t _lastCalReadMs = 0;
+static char _dayBuf[12] = "--";
+static char _dateBuf[20] = "----/--/--";
+static char _timeBuf[8] = "--:--";
+static float _tempC = NAN;
+static float _humPct = NAN;
+
+const char* dayNameByIndex(uint8_t idx) {
+  static const char* NAMES[7] = {
+    "SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY",
+    "THURSDAY", "FRIDAY", "SATURDAY"
+  };
+  return (idx < 7) ? NAMES[idx] : "UNKNOWN";
+}
+
+void initCalendarSensors() {
+  _thermo.begin();
+  _thermoReady = true;
+
+#if HAS_RTC_LIB
+  _rtcReady = _rtc.begin();
+  if (!_rtcReady) {
+    Serial.println(F("[RTC] DS1307 not detected."));
+  }
+#else
+  _rtcReady = false;
+  Serial.println(F("[RTC] RTClib missing; using placeholder date/time."));
+#endif
+}
+
+void updateCalendarReadings() {
+  uint32_t nowMs = millis();
+  if (nowMs - _lastCalReadMs < 1000) return;
+  _lastCalReadMs = nowMs;
+
+  if (_thermoReady) {
+    _thermo.update();
+    _tempC = _thermo.getTemperature();
+    _humPct = _thermo.getHumidity();
+  }
+
+#if HAS_RTC_LIB
+  if (_rtcReady) {
+    DateTime now = _rtc.now();
+    snprintf(_dayBuf, sizeof(_dayBuf), "%s", dayNameByIndex(now.dayOfTheWeek()));
+    snprintf(_dateBuf, sizeof(_dateBuf), "%04d-%02d-%02d", now.year(), now.month(), now.day());
+    snprintf(_timeBuf, sizeof(_timeBuf), "%02d:%02d", now.hour(), now.minute());
+    return;
+  }
+#endif
+
+  snprintf(_dayBuf, sizeof(_dayBuf), "NO RTC");
+  snprintf(_dateBuf, sizeof(_dateBuf), "----/--/--");
+  snprintf(_timeBuf, sizeof(_timeBuf), "--:--");
+}
 
 // forward decls
 void drawPetFace();
@@ -48,6 +125,7 @@ void initDisplay() {
   if (epd.Init(FULL) != 0) { Serial.println(F("[EPD] FAIL")); return; }
   epd.Clear();
   paint.SetRotate(ROTATE_270);
+  initCalendarSensors();
   Serial.println(F("[EPD] Ready"));
 }
 
@@ -452,17 +530,18 @@ void drawSleepFace() {
 // ═══════════════════════════════════════════════════════════
 
 void drawTempCalPortrait() {
-  const char* dayName = "SATURDAY";
-  const char* dateStr = "Feb 21, 2026";
-  const char* timeStr = "14:30";
-  int tempI = 22, tempF = 5;
-  int hum = 55;
+  updateCalendarReadings();
+  int tempI = isnan(_tempC) ? 0 : (int)_tempC;
+  int tempF = isnan(_tempC) ? 0 : (int)(fabs(_tempC - tempI) * 10.0f);
+  int hum = isnan(_humPct) ? 0 : (int)(_humPct + 0.5f);
+  if (hum < 0) hum = 0;
+  if (hum > 100) hum = 100;
 
-  paint.DrawStringAt(10, 8,  dayName, &Font12, B);
-  paint.DrawStringAt(10, 26, dateStr, &Font12, B);
+  paint.DrawStringAt(10, 8,  _dayBuf, &Font12, B);
+  paint.DrawStringAt(10, 26, _dateBuf, &Font12, B);
   paint.DrawHorizontalLine(4, 44, 114, B);
 
-  paint.DrawStringAt(10, 54, timeStr, &Font24, B);
+  paint.DrawStringAt(10, 54, _timeBuf, &Font24, B);
   paint.DrawHorizontalLine(4, 88, 114, B);
 
   paint.DrawStringAt(6, 96, "Temperature", &Font12, B);
