@@ -1,21 +1,21 @@
 /*
- * DS1307 RTC Quick Test
- * ---------------------
- * Wiring:  SDA → A4,  SCL → A5,  VCC → 5 V,  GND → GND
- *          (CR2032 coin cell in the RTC module for backup)
+ * DS1307 RTC Quick Test — Arduino UNO Q
  *
- * What this does:
- *   1. Tries to talk to the DS1307 over I2C.
- *   2. If the RTC lost power (or was never set), programs it with
- *      the compile-time timestamp so the clock starts ticking.
- *   3. Prints date + time to Serial every second.
+ * Wiring:
+ *   RTC SDA → A4
+ *   RTC SCL → A5
+ *   RTC VCC → 5V
+ *   RTC GND → GND
+ *   (CR2032 coin cell in RTC module for backup power)
  *
- * Open the Arduino Cloud Monitor to see output.
+ * Libraries needed:
+ *   - RTClib by Adafruit (Library Manager)
+ *   - Arduino_RouterBridge (already installed)
  */
 
 #include <Wire.h>
 #include <RTClib.h>
-#include <Arduino_UnifiedStorage.h>
+#include <Arduino_RouterBridge.h>
 
 RTC_DS1307 rtc;
 
@@ -25,57 +25,53 @@ const char daysOfWeek[7][4] = {
 
 void setup() {
   Monitor.begin(9600);
-  while (!Monitor) { ; }         // wait for Monitor connection
-
-  Wire.begin();
-  delay(100);                     // let I2C settle
+  delay(5000);  // wait for Serial Monitor to open — do NOT use while(!Monitor)
+                // on Uno Q it hangs forever if Monitor isn't open yet
 
   Monitor.println("=== DS1307 RTC Test ===");
+  delay(200);
+
+  Wire.begin();
+  delay(200);
 
   if (!rtc.begin()) {
-    delay(100);
-    Monitor.println("ERROR: Could not find DS1307 on I2C bus!");
-    delay(100);
-    Monitor.println("  -> Check wiring: SDA=A4, SCL=A5, VCC=5V");
-    while (true) { delay(1000); } // halt
+    Monitor.println("ERROR: DS1307 not found on I2C bus!");
+    delay(200);
+    Monitor.println("Check wiring: SDA=A4, SCL=A5, VCC=5V, GND=GND");
+    while (true) { delay(1000); }
   }
 
-  Monitor.println("DS1307 found on I2C bus.");
+  Monitor.println("DS1307 found!");
+  delay(200);
 
   if (!rtc.isrunning()) {
-    delay(100);
-    Monitor.println("RTC is NOT running — setting time to compile timestamp...");
-    // This sets the RTC to the date & time this sketch was compiled.
-    // Upload again if you need to re-sync.
-    delay(100);
+    Monitor.println("RTC not running — setting to compile time...");
+    delay(200);
     rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
     Monitor.println("RTC time set.");
+    delay(200);
   } else {
-    delay(100);
-    Monitor.println("RTC is already running.");
+    Monitor.println("RTC already running.");
+    delay(200);
   }
 
-  // Print the current time once immediately
-  printDateTime(rtc.now());
-  delay(100);
   Monitor.println("---");
+  delay(200);
+  printDateTime(rtc.now());
 }
 
 void loop() {
-  DateTime now = rtc.now();
-  printDateTime(now);
+  printDateTime(rtc.now());
   delay(1000);
 }
 
 void printDateTime(const DateTime &dt) {
   char buf[40];
-
-  // YYYY/MM/DD (DDD) HH:MM:SS
   snprintf(buf, sizeof(buf),
            "%04d/%02d/%02d (%s) %02d:%02d:%02d",
            dt.year(), dt.month(), dt.day(),
            daysOfWeek[dt.dayOfTheWeek()],
            dt.hour(), dt.minute(), dt.second());
-  delay(100);
   Monitor.println(buf);
+  delay(200);
 }

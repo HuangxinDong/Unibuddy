@@ -19,17 +19,7 @@
 #include "pomodoro.h"
 #include "behaviour.h"
 #include "Modulino.h"
-
-#if defined(__has_include)
-  #if __has_include(<RTClib.h>)
-    #include <RTClib.h>
-    #define HAS_RTC_LIB 1
-  #else
-    #define HAS_RTC_LIB 0
-  #endif
-#else
-  #define HAS_RTC_LIB 0
-#endif
+#include "calendar.h"
 
 #define COL_BLACK  0
 #define COL_WHITE  1
@@ -45,69 +35,6 @@ static const int PARTIAL_LIMIT = 30;
 
 static uint8_t  _sleepFrame  = 0;
 static uint32_t _sleepTimer  = 0;
-
-static ModulinoThermo _thermo;
-static bool _thermoReady = false;
-
-#if HAS_RTC_LIB
-static RTC_DS1307 _rtc;
-#endif
-static bool _rtcReady = false;
-static uint32_t _lastCalReadMs = 0;
-static char _dayBuf[12] = "--";
-static char _dateBuf[20] = "----/--/--";
-static char _timeBuf[8] = "--:--";
-static float _tempC = NAN;
-static float _humPct = NAN;
-
-const char* dayNameByIndex(uint8_t idx) {
-  static const char* NAMES[7] = {
-    "SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY",
-    "THURSDAY", "FRIDAY", "SATURDAY"
-  };
-  return (idx < 7) ? NAMES[idx] : "UNKNOWN";
-}
-
-void initCalendarSensors() {
-  _thermo.begin();
-  _thermoReady = true;
-
-#if HAS_RTC_LIB
-  _rtcReady = _rtc.begin();
-  if (!_rtcReady) {
-    Serial.println(F("[RTC] DS1307 not detected."));
-  }
-#else
-  _rtcReady = false;
-  Serial.println(F("[RTC] RTClib missing; using placeholder date/time."));
-#endif
-}
-
-void updateCalendarReadings() {
-  uint32_t nowMs = millis();
-  if (nowMs - _lastCalReadMs < 1000) return;
-  _lastCalReadMs = nowMs;
-
-  if (_thermoReady) {
-    _thermo.update();
-    _tempC = _thermo.getTemperature();
-    _humPct = _thermo.getHumidity();
-  }
-
-#if HAS_RTC_LIB
-  if (_rtcReady) {
-    DateTime now = _rtc.now();
-    snprintf(_dayBuf, sizeof(_dayBuf), "%s", dayNameByIndex(now.dayOfTheWeek()));
-    snprintf(_dateBuf, sizeof(_dateBuf), "%04d-%02d-%02d", now.year(), now.month(), now.day());
-    snprintf(_timeBuf, sizeof(_timeBuf), "%02d:%02d", now.hour(), now.minute());
-    return;
-  }
-#endif
-
-  snprintf(_dayBuf, sizeof(_dayBuf), "NO RTC");
-  snprintf(_dateBuf, sizeof(_dateBuf), "----/--/--");
-  snprintf(_timeBuf, sizeof(_timeBuf), "--:--");
-}
 
 // forward decls
 void drawPetFace();
