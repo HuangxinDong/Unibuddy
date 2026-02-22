@@ -10,12 +10,16 @@
  */
 
 #include <SPI.h>
+#include <Wire.h>
+#include <math.h>
 #include "config.h"
 #include "epd2in13_V4.h"
 #include "epdpaint.h"
 #include "pet.h"
 #include "pomodoro.h"
 #include "behaviour.h"
+#include "Modulino.h"
+#include "calendar.h"
 
 #define COL_BLACK  0
 #define COL_WHITE  1
@@ -48,6 +52,7 @@ void initDisplay() {
   if (epd.Init(FULL) != 0) { Serial.println(F("[EPD] FAIL")); return; }
   epd.Clear();
   paint.SetRotate(ROTATE_270);
+  initCalendarSensors();
   Serial.println(F("[EPD] Ready"));
 }
 
@@ -452,17 +457,18 @@ void drawSleepFace() {
 // ═══════════════════════════════════════════════════════════
 
 void drawTempCalPortrait() {
-  const char* dayName = "SATURDAY";
-  const char* dateStr = "Feb 21, 2026";
-  const char* timeStr = "14:30";
-  int tempI = 22, tempF = 5;
-  int hum = 55;
+  updateCalendarReadings();
+  int tempI = isnan(_tempC) ? 0 : (int)_tempC;
+  int tempF = isnan(_tempC) ? 0 : (int)(fabs(_tempC - tempI) * 10.0f);
+  int hum = isnan(_humPct) ? 0 : (int)(_humPct + 0.5f);
+  if (hum < 0) hum = 0;
+  if (hum > 100) hum = 100;
 
-  paint.DrawStringAt(10, 8,  dayName, &Font12, B);
-  paint.DrawStringAt(10, 26, dateStr, &Font12, B);
+  paint.DrawStringAt(10, 8,  _dayBuf, &Font12, B);
+  paint.DrawStringAt(10, 26, _dateBuf, &Font12, B);
   paint.DrawHorizontalLine(4, 44, 114, B);
 
-  paint.DrawStringAt(10, 54, timeStr, &Font24, B);
+  paint.DrawStringAt(10, 54, _timeBuf, &Font24, B);
   paint.DrawHorizontalLine(4, 88, 114, B);
 
   paint.DrawStringAt(6, 96, "Temperature", &Font12, B);

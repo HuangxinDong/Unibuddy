@@ -14,6 +14,10 @@
 #include "tilt.h"
 #include "epaper.h"      // includes pet.h, pomodoro.h internally
 
+#if USE_SERVO_NUDGE
+#include "servo_arm.h"
+#endif
+
 // ── State machine ───────────────────────────────────────────
 static AppMode currentMode  = MODE_PET;
 static AppMode prevMode     = MODE_PET;
@@ -81,6 +85,9 @@ void setup() {
   initBehaviour();
   initPomodoro();
   initDisplay();
+#if USE_SERVO_NUDGE
+  initServoArm();
+#endif
   showSplashScreen();
   delay(2000);
 
@@ -97,6 +104,10 @@ void setup() {
 void loop() {
   uint32_t now = millis();
 
+#if USE_SERVO_NUDGE
+  tickServoNudge();
+#endif
+
   // ── 1. Read sensors ───────────────────────────────────────
   updateTilt();
   InputEvent evt = readInput();
@@ -104,6 +115,9 @@ void loop() {
   // ── 2. Shake handling (pet mode only) ─────────────────────
   if (wasShakeDetected() && currentMode == MODE_PET) {
     onShake();
+#if USE_SERVO_NUDGE
+    triggerNudge();
+#endif
     _needsRedraw = true;
   }
 
@@ -167,6 +181,9 @@ void loop() {
     if (isPomodoroFinished()) {
       recordSession();
       startBreak();
+#if USE_SERVO_NUDGE
+      triggerNudge();
+#endif
       transitionTo(MODE_BREAK);
     }
   }
