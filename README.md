@@ -1,220 +1,210 @@
-# UniBuddy — Pocket Desktop Buddy
+# UniBuddy — Your Desk-Sized Study Companion
 
-An Arduino-based physical study companion that helps university students manage focus time through a **Pomodoro timer**, **virtual pet**, and **physical interaction sensors** — all without touching a phone.
+> A physical Pomodoro pet that lives on your desk, reacts to touch and motion, and keeps you focused — **no phone required**.
 
-## Minimum Runnable Unit
+Built on **Arduino UNO R4 WiFi** with a **Waveshare 2.13" e-Paper** display, **Modulino Movement** IMU, tap sensor, servo arm, and a 3D-printed enclosure.
 
-The codebase compiles and runs as a self-contained loop on the MCU side (no Linux/WiFi/AI required):
+---
 
-1. **Power on** → e-paper shows splash screen → enters Idle mode.
-2. **Long-press button** → starts a 25-minute Pomodoro focus session.
-3. **Timer finishes** → records session (EEPROM), shows soft nudge alert on e-paper, enters 5-min Break (15-min every 4th session).
-4. **Break finishes** → automatically starts next Pomodoro.
-5. **Short-press button** → cycles Idle ↔ Stats; skips Break when in Break mode.
-6. **Tap (KY031) or movement trigger** → enters nudge mode, auto-returns to Idle.
+## Why UniBuddy?
 
-All libraries have **graceful fallbacks**: if EEPROM is missing, the firmware still compiles and runs with Serial output.
+| Problem | UniBuddy's Answer |
+|---|---|
+| Phone timers lead to distraction | A dedicated physical device — no screen temptation |
+| Productivity tools feel cold | A virtual pet with **14 moods** that reacts to how you study |
+| Pomodoro apps need manual input | **Tilt to start** — flip the device and the timer begins |
+| No feedback loop between sessions | Pet mood evolves based on your session count and habits |
+
+---
+
+## Key Features
+
+### Tilt-Driven Modes — No Buttons Needed
+
+Simply rotate UniBuddy to switch between modes. An on-board IMU with EMA filtering, hysteresis, and shake lockout ensures smooth, reliable transitions.
+
+| Orientation | Mode | Description |
+|---|---|---|
+| Standing upright | **Pet** | Your idle companion — eyes follow, blinks, reacts |
+| Flat on desk | **Sleep** | Low-power resting face with Zzz animation |
+| Tilted left / right | **Info** | Portrait calendar / temperature display |
+| Flipped upright | **Focus** | 25-min Pomodoro timer with progress bar |
+| Face-down | **Off** | Display stops updating |
+
+### 14-Mood Virtual Pet
+
+The pet's emotional state changes dynamically based on your interactions:
+
+- **Shake gently** → cute reaction with sparkle eyes
+- **Shake repeatedly** → surprised → annoyed → dizzy
+- **Complete focus sessions** → happy / interested / cute
+- **Study too many sessions** → tired / sad (take a break!)
+- **Leave idle too long** → bored
+
+Each mood has a **unique eye style** with pixel-art expressions drawn in real-time on the e-paper display.
+
+### Pomodoro Focus System
+
+- **25-min focus / 5-min break** cycle (15-min break every 4th session)
+- **Tap to pause / resume** the timer mid-session
+- Animated progress bar + countdown on the focus screen
+- Session counter with dot indicators (resets every 4 cycles)
+- Break-complete notification with optional **servo arm nudge**
+
+### Physical Interactions
+
+| Input | Action |
+|---|---|
+| **Single tap** (KY-031) | Pause/resume Pomodoro (focus mode) · Pet reacts (pet mode) |
+| **Double tap** | Toggle **Night Mode** (works in any mode) |
+| **Shake** | Graduated mood reactions + servo nudge |
+| **Button short-press** | Start new Pomodoro when idle |
+| **Button long-press** | Reset all sessions (pet mode) |
+
+### Night Mode
+
+Double-tap anywhere to invert the display — black background with white foreground, crescent moon and scattered stars. Every drawing primitive dynamically switches via `FG()`/`BG()` colour abstraction, so all 14 eye styles, mood symbols, and screen layouts render correctly in both modes.
+
+### Servo Arm
+
+An SG90 micro servo provides a physical "nudge" animation when focus sessions complete or when you shake the device. Fully optional — the firmware compiles and runs without `Servo.h`.
 
 ---
 
 ## Hardware
 
-| Component | Pin | Notes |
+| Component | Interface | Notes |
 |---|---|---|
-| Waveshare 2.13" e-Paper V4 (250×122, BW) | D7–D11, D13 | SPI bus (see below) |
-| KY031 Tap Sensor | D4 | `INPUT_PULLUP`, active LOW on tap |
-| Push Button | D2 | `INPUT_PULLUP`, active LOW |
-| Modulino Movement Sensor | D3 | `INPUT_PULLUP`, active LOW trigger/interrupt |
+| Arduino UNO R4 WiFi | — | Main MCU (Renesas RA4M1) |
+| Waveshare 2.13" e-Paper V4 | SPI (D7–D11, D13) | 250×122 BW, partial refresh ~1 Hz |
+| Modulino Movement (LSM6DSOX) | I²C | 6-axis IMU for tilt + shake |
+| KY-031 Tap Sensor | D2 (ISR) | Knock detection via interrupt |
+| Push Button | D4 | Debounced, short/long press |
+| SG90 Servo | D6 (PWM) | Optional nudge arm |
+| 3D-Printed Enclosure | — | STL files in `CAD/` |
 
 ### E-Paper SPI Wiring
 
-| Signal | Pin | Function |
-|---|---|---|
-| VCC | 5V | Power |
-| GND | GND | Ground |
-| DIN | D11 | SPI MOSI |
-| CLK | D13 | SPI SCK |
-| CS | D10 | Chip Select |
-| DC | D9 | Data/Command |
-| RST | D8 | Reset |
-| BUSY | D7 | Busy flag |
-
-**Board**: Arduino Uno Q (STM32 MCU side, Zephyr toolchain).
-
-**Display**: Landscape orientation (ROTATE\_270), 250 px wide × 122 px tall, full 4000-byte framebuffer in RAM. Partial refresh for timer ticks (~1 Hz); full refresh on mode changes.
-
----
-
-## Software Dependencies
-
-Install via Arduino IDE Library Manager:
-
-| Library | Required? | Fallback |
-|---|---|---|
-| `EEPROM` | Recommended | RAM-only: sessions lost on reboot |
-| `SPI` | Required | Built-in (Arduino core) |
-
-E-paper driver (`epd2in13_V4`) and paint library are bundled in the sketch folder. No external install needed.
-
-> `EEPROM` is auto-detected via `__has_include`. No manual `#define` needed.
-
----
-
-## Quick Start
-
-1. Open `UniBuddy/UniBuddy.ino` in Arduino IDE.
-2. Select your board and serial port.
-3. **Compile & Upload**.
-4. Open Serial Monitor at **115200 baud** — you should see `[Buddy] Ready!`.
-
-### Test Mode (fast iteration)
-
-Uncomment this line in `UniBuddy/config.h` to use 10s/3s/5s durations instead of 25m/5m/15m:
-
-```cpp
-#define TEST_MODE
-```
-
-This lets you verify the full Idle → Focus → Break → next-Focus loop in under 30 seconds.
-
-### E-Paper Landscape Test
-
-A standalone test lives in `EpaperMinTest/`:
-1. Open `EpaperMinTest/EpaperMinTest.ino`.
-2. Upload — screen should show landscape text + shapes, then demo partial refresh.
-
----
-
-## Controls
-
-| Input | Action |
+| Signal | Pin |
 |---|---|
-| **Long-press button** | Idle → Start Pomodoro / Pomodoro → Pause & return to Idle |
-| **Short-press button** | Idle ↔ Stats / Break → Skip break |
-| **Tap sensor trigger** | Enter/exit nudge mode |
-| **Movement sensor trigger** | Enter/exit nudge mode |
+| DIN (MOSI) | D11 |
+| CLK (SCK) | D13 |
+| CS | D10 |
+| DC | D9 |
+| RST | D8 |
+| BUSY | D7 |
 
 ---
 
-## Code Structure
+## Software Architecture
 
 ```
 UniBuddy/
-├── UniBuddy.ino      Main loop & state machine (Idle/Pomodoro/Break/Nudge/Stats)
-├── config.h           Pin assignments, timing constants, TEST_MODE toggle
-├── input.h            Button + tap + movement sensor events
-├── pomodoro.h         Focus & break countdown timers
-├── behaviour.h        Session counter & streak persistence (EEPROM)
-├── pet.h              Pet mood enum, pixel-art bitmaps, animation tick
-├── epaper.h           E-paper landscape rendering (full/partial refresh)
-├── servo_arm.h        Servo nudge sequence (future stage, optional)
+├── UniBuddy.ino       Main loop & tilt-driven state machine
+├── config.h           Pin assignments, timing constants, mode enums
+├── input.h            Button + KY-031 tap (ISR) + movement polling
+├── tilt.h             IMU EMA filter, tilt classification, shake detection
+├── pet.h              14-mood system, animation phases, shake reactions, idle decay
+├── pomodoro.h         Focus & break timers with pause/resume
+├── behaviour.h        Session counter & EEPROM streak persistence
+├── epaper.h           Full rendering engine (all screens, night mode, mood art)
+├── servo_arm.h        Servo nudge sequence (auto-detected, optional)
+├── calendar.h         RTC + temperature display (requires RTClib)
 ├── epd2in13_V4.*      Waveshare e-paper driver (bundled)
-├── epdpaint.*         Paint class (Draw*, rotation, framebuffer)
+├── epdpaint.*         Paint class with rotation & framebuffer
 ├── epdif.*            SPI hardware abstraction
 └── font*.c / fonts.h  Bitmap fonts (8/12/16/20/24 px)
-
-EpaperMinTest/
-└── EpaperMinTest.ino  Standalone landscape e-paper test
 ```
 
 ### State Machine
 
 ```
-         long-press              timer done           break done
-  IDLE ──────────► POMODORO ──────────► BREAK ──────────► POMODORO
-   ▲  short-press     │                  │ short-press       │
-   └──────────────────┘                  └───────► IDLE ◄────┘
-   ▲                                                   │
-   └──── NUDGE (auto-return after short soft nudge) ◄┘
-         (tap/movement triggers from any mode)
+                    tilt flip                timer done              break done
+  PET (upright) ──────────────► POMODORO ──────────────► BREAK ──────────────► PET
+                                  ▲  tap: pause/resume     │
+                                  └────────────────────────┘
 
-   IDLE ◄──short-press──► STATS
+  PET ◄──tilt flat──► SLEEP       PET ◄──tilt side──► INFO (calendar/temp)
+
+  Any mode ── double tap ──► toggle Night Mode
+  Any mode ── face down ──► OFF (display frozen)
 ```
 
 ### Display Refresh Strategy
 
-| Trigger | Refresh Type | Function |
+| Trigger | Refresh Type | Details |
 |---|---|---|
-| Mode change (Idle→Focus, etc.) | Full refresh | `fullRefresh()` → `DisplayPartBaseImage()` |
-| Timer tick (1 Hz) | Partial refresh | `partialRefresh()` → `DisplayPart()` |
-| Every 30 partial refreshes | Auto-full refresh | Prevents ghosting accumulation |
-
-### Architecture (Arduino Uno Q)
-
-```
-┌─────────────────────────────────────────────────┐
-│              Arduino Uno Q                      │
-│  ┌────────────────────┐  ┌───────────────────┐  │
-│  │  MCU (STM32)       │  │  MPU (Linux)      │  │
-│  │  - E-paper render  │  │  - Python logic   │  │
-│  │  - Sensor input    │  │  - Gemini AI API  │  │
-│  │  - Button/Tap/Move │◄─│  - WiFi (future)  │  │
-│  │  - EEPROM save     │  │                   │  │
-│  └────────┬───────────┘  └───────────────────┘  │
-│           │   SPI / PWM / GPIO                  │
-│  ┌────────┴──────────────────────────────────┐  │
-│  │  HW: E-Paper │ Button │ KY031 Tap │ Movement │  │
-│  └───────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────┘
-```
-
-> **MVP scope**: Only the MCU side is implemented. The Linux MPU side (AI chat, WiFi sync) is a future extension.
+| Mode change / night toggle | **Full refresh** | Clean transition, no ghosting |
+| Timer tick (~1 Hz) | **Partial refresh** | Fast update, low flicker |
+| Every 30 partial cycles | **Auto full refresh** | Prevents ghost accumulation |
 
 ---
 
-## Serial Protocol (Future — Linux MPU ↔ MCU)
+## Quick Start
 
-| Direction | Message | Meaning |
-|---|---|---|
-| MCU → Linux | `SESSION_DONE` | Completed a 25-min pomodoro |
-| MCU → Linux | `MOTION` | Movement/tap interaction detected |
-| MCU → Linux | `BOOT` | Device powered on |
-| Linux → MCU | `SET_MOOD:2` | Override pet mood (0–4) |
-| Linux → MCU | `MSG:Study time!` | Display message on e-paper for 3s |
-| Linux → MCU | `STREAK:5` | Update streak display |
+1. Open `UniBuddy/UniBuddy.ino` in **Arduino IDE 2.x**.
+2. Install board support: **Arduino UNO R4 Boards** via Board Manager.
+3. Install libraries via Library Manager:
+   - `Modulino` (Arduino)
+   - `RTClib` (Adafruit) — optional, for calendar mode
+4. Select **Arduino UNO R4 WiFi** and your serial port.
+5. **Compile & Upload**.
+6. Open Serial Monitor at **115200 baud** — you should see `=== UniBuddy ===`.
+
+### Test Mode
+
+Uncomment in `config.h` for rapid iteration (10s focus / 3s break / 5s long break):
+
+```cpp
+#define TEST_MODE
+```
 
 ---
 
-## What Was Fixed
+## 3D-Printed Enclosure
 
-| Issue | Fix |
+STL files are provided in the `CAD/` directory:
+
+| File | Description |
 |---|---|
-| `getSessionCount()` defined in both `pomodoro.h` and `behaviour.h` | Renamed pomodoro-internal counter to `getCompletedCycleCount()` |
-| Pomodoro finish didn't start Break timer | Added `startBreak()` call on transition |
-| Nudge mode never auto-exited | Returns to Idle when servo sequence completes |
-| `setPetMood()` called every render frame, breaking animation | Moved to state transitions only |
-| Compilation fails without Servo/EEPROM libs | Added `__has_include` guards with Serial fallback stubs |
-| No fast-test option | Added `TEST_MODE` macro (10s focus / 3s break) |
-| Unused `_nudgeReps` variable | Removed |
-| Break skip left stale timer state | Pet mood properly restored on skip |
-| OLED → E-Paper migration | Replaced Adafruit SSD1306 with Waveshare 2.13" V4 driver |
-| Servo pin conflict (D9 = e-paper DC) | Moved servo to D6 |
-| Waveshare Paint rotation off-by-one | Fixed `width-y` → `width-1-y` in ROTATE\_90/180/270 |
-| E-paper refresh too frequent | Event-driven: full refresh on mode change, partial on timer tick |
+| `CASE.stl` | Main body housing all electronics |
+| `LID.stl` | Snap-fit lid with e-paper window |
 
 ---
 
-## Feature Roadmap
+## Graceful Fallbacks
 
-| Priority | Feature | Status |
+The firmware auto-detects optional libraries at compile time via `__has_include`:
+
+| Library | Missing? | Fallback |
 |---|---|---|
-| P0 | Pomodoro Timer (25/5/15) | Done |
-| P0 | Virtual Pet (pixel art moods) | Done |
-| P0 | Servo Arm Nudge | Deferred (future stage) |
-| P0 | Button + Tap/Movement Input | Done |
-| P0 | Session Counter (EEPROM) | Done |
-| P0 | E-Paper Landscape Display | Done |
-| P1 | Streak Tracker | Partial (data stored, no day-boundary logic) |
-| P1 | Stats Screen | Done |
-| P1 | Burnout / Low Energy Mode | Not started |
-| P1 | AI Conversational Chat (Linux side) | Not started |
-| P2 | Dorm Room Sync (ESP32) | Future |
-| P2 | Note Jotting / Calendar | Future |
-| P2 | Vibration Motor | Future |
-| P2 | Mobile App / AR / Computer Vision | Future |
+| `Servo.h` | Nudge disabled | Serial log only |
+| `EEPROM.h` | Persistence disabled | RAM-only session counter |
+| `RTClib.h` | Calendar disabled | Info screen shows placeholder |
+
+No `#define` toggles needed — it just works.
+
+---
+
+## Roadmap
+
+| Status | Feature |
+|---|---|
+| ✅ Done | Pomodoro timer (25/5/15) with pause/resume |
+| ✅ Done | 14-mood virtual pet with animated eyes |
+| ✅ Done | Tilt-driven mode switching (IMU + EMA + hysteresis) |
+| ✅ Done | Shake detection with graduated mood reactions |
+| ✅ Done | Night mode (full display inversion + moon/stars) |
+| ✅ Done | Tap to pause/resume Pomodoro + pet interaction |
+| ✅ Done | Session counter with EEPROM persistence |
+| ✅ Done | E-paper multi-screen rendering (5 modes) |
+| ✅ Done | 3D-printed enclosure (STL provided) |
+| ✅ Done | Calendar / temperature info screen (RTC + thermo) |
+| 📋 Planned | Streak tracking with day-boundary logic |
+| 📋 Planned | Linux MPU integration (AI chat via Gemini API) |
 
 ---
 
 ## License
 
-Hack London 2025 — Hardware Track project.
+**Hack London 2025** — Hardware Track project.
