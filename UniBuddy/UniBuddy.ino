@@ -166,9 +166,16 @@ void loop() {
   }
 
   // ── 5. Tap events ────────────────────────────────────────
-  if (evt == EVT_TAP && currentMode == MODE_PET) {
-    setPetMood(MOOD_INTERESTED);
-    _needsRedraw = true;
+  if (evt == EVT_TAP) {
+    if (currentMode == MODE_POMODORO) {
+      togglePausePomodoro();
+      Serial.print(F("[Pom] "));
+      Serial.println(isPomPaused() ? F("PAUSED") : F("RESUMED"));
+      _needsRedraw = true;
+    } else if (currentMode == MODE_PET) {
+      setPetMood(MOOD_INTERESTED);
+      _needsRedraw = true;
+    }
   }
   if (evt == EVT_DOUBLE_TAP) {
     /* double tap anywhere → toggle night mode */

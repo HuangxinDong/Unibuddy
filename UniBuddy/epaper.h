@@ -608,6 +608,11 @@ void drawFocusScreen() {
   snprintf(timeBuf, sizeof(timeBuf), "%02d:%02d", mn, sc);
   paint.DrawStringAt(84, 72, timeBuf, &Font24, fg);
 
+  /* --- paused indicator --- */
+  if (isPomPaused()) {
+    paint.DrawStringAt(80, 94, "|| PAUSED", &Font12, fg);
+  }
+
   /* --- bottom row --- */
   uint8_t sess = getSessionCount();
   int by = 110;

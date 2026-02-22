@@ -50,6 +50,12 @@ void resumePomodoro() {
 
 bool isPomRunning()  { return _pomRunning; }
 bool isPomFinished() { return _pomFinished; }
+bool isPomPaused()   { return !_pomRunning && !_pomFinished && _pomElapsed > 0; }
+
+void togglePausePomodoro() {
+  if (_pomRunning)          pausePomodoro();
+  else if (isPomPaused())   resumePomodoro();
+}
 
 void updatePomodoro() {
   if (!_pomRunning) return;
