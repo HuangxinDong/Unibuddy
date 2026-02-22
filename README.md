@@ -1,8 +1,16 @@
 # UniBuddy — Your Desk-Sized Study Companion
 
-> A physical Pomodoro pet that lives on your desk, reacts to touch and motion, and keeps you focused — **no phone required**.
+> A physical Pomodoro pet that lives on your desk, reacts to touch and motion, and keeps you focused — no phone required.
 
-Built on **Arduino UNO R4 WiFi** with a **Waveshare 2.13" e-Paper** display, **Modulino Movement** IMU, tap sensor, servo arm, and a 3D-printed enclosure.
+Built on Arduino UNO R4 WiFi with a Waveshare 2.13" e-Paper display, Modulino Movement IMU, tap sensor, servo arm, and a 3D-printed enclosure.
+
+<p align="center">
+  <a href="https://www.youtube.com/watch?v=GjLW2NmiDvU">
+    <img src="feature_img.png" alt="UniBuddy Demo Video" width="600">
+  </a>
+  <br>
+  <em>▶ Click to watch the demo</em>
+</p>
 
 ---
 
@@ -11,8 +19,8 @@ Built on **Arduino UNO R4 WiFi** with a **Waveshare 2.13" e-Paper** display, **M
 | Problem | UniBuddy's Answer |
 |---|---|
 | Phone timers lead to distraction | A dedicated physical device — no screen temptation |
-| Productivity tools feel cold | A virtual pet with **14 moods** that reacts to how you study |
-| Pomodoro apps need manual input | **Tilt to start** — flip the device and the timer begins |
+| Productivity tools feel cold | A virtual pet with different mood that reacts to how you study |
+| Pomodoro apps need manual input | Tilt to start — flip the device and the timer begins |
 | No feedback loop between sessions | Pet mood evolves based on your session count and habits |
 
 ---
@@ -205,6 +213,4 @@ No `#define` toggles needed — it just works.
 
 ---
 
-## License
-
-**Hack London 2025** — Hardware Track project.
+**Hack London 2026** — Hardware Track project.

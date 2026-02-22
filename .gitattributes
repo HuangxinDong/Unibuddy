@@ -1,0 +1,15 @@
+# Auto detect text files and normalise line endings
+* text=auto
+
+# Source code
+*.ino text eol=lf
+*.h   text eol=lf
+*.c   text eol=lf
+*.cpp text eol=lf
+
+# Documentation
+*.md  text eol=lf
+
+# Binary / 3D models
+*.stl binary
+*.png binary
