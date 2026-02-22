@@ -12,7 +12,7 @@ Built on Arduino UNO R4 WiFi with a Waveshare 2.13" e-Paper display, Modulino Mo
   <em>▶ Click to watch the demo</em>
 </p>
 
----
+
 
 ## Why UniBuddy?
 
@@ -23,7 +23,7 @@ Built on Arduino UNO R4 WiFi with a Waveshare 2.13" e-Paper display, Modulino Mo
 | Pomodoro apps need manual input | Tilt to start — flip the device and the timer begins |
 | No feedback loop between sessions | Pet mood evolves based on your session count and habits |
 
----
+
 
 ## Key Features
 
@@ -77,7 +77,7 @@ Double-tap anywhere to invert the display — black background with white foregr
 
 An SG90 micro servo provides a physical "nudge" animation when focus sessions complete or when you shake the device. Fully optional — the firmware compiles and runs without `Servo.h`.
 
----
+
 
 ## Hardware
 
@@ -102,7 +102,7 @@ An SG90 micro servo provides a physical "nudge" animation when focus sessions co
 | RST | D8 |
 | BUSY | D7 |
 
----
+
 
 ## Software Architecture
 
@@ -167,7 +167,6 @@ Uncomment in `config.h` for rapid iteration (10s focus / 3s break / 5s long brea
 #define TEST_MODE
 ```
 
----
 
 ## 3D-Printed Enclosure
 
@@ -192,7 +191,6 @@ The firmware auto-detects optional libraries at compile time via `__has_include`
 
 No `#define` toggles needed — it just works.
 
----
 
 ## Roadmap
 
@@ -210,6 +208,7 @@ No `#define` toggles needed — it just works.
 | ✅ Done | Calendar / temperature info screen (RTC + thermo) |
 | 📋 Planned | Streak tracking with day-boundary logic |
 | 📋 Planned | Linux MPU integration (AI chat via Gemini API) |
+
 
 ---
 
