@@ -170,9 +170,13 @@ void loop() {
     setPetMood(MOOD_INTERESTED);
     _needsRedraw = true;
   }
-  if (evt == EVT_DOUBLE_TAP && currentMode == MODE_PET) {
-    setPetMood(MOOD_HAPPY);
-    _needsRedraw = true;
+  if (evt == EVT_DOUBLE_TAP) {
+    /* double tap anywhere → toggle night mode */
+    toggleNightMode();
+    Serial.print(F("[Night] "));
+    Serial.println(isNightMode() ? F("ON") : F("OFF"));
+    fullRefresh(currentMode);          // full refresh for clean inversion
+    _needsRedraw = false;
   }
 
   // ── 6. Pomodoro / break timers ────────────────────────────
